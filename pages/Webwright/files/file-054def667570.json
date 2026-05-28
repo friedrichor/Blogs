@@ -1,0 +1,2276 @@
+{
+  "id": "file-054def667570",
+  "path": "src/webwright/environments/local_browser.py",
+  "language": "python",
+  "lines": [
+    {
+      "number": 1,
+      "text": "from __future__ import annotations"
+    },
+    {
+      "number": 2,
+      "text": ""
+    },
+    {
+      "number": 3,
+      "text": "import asyncio"
+    },
+    {
+      "number": 4,
+      "text": "import io"
+    },
+    {
+      "number": 5,
+      "text": "import json"
+    },
+    {
+      "number": 6,
+      "text": "import os"
+    },
+    {
+      "number": 7,
+      "text": "import shutil"
+    },
+    {
+      "number": 8,
+      "text": "import subprocess"
+    },
+    {
+      "number": 9,
+      "text": "import sys"
+    },
+    {
+      "number": 10,
+      "text": "import textwrap"
+    },
+    {
+      "number": 11,
+      "text": "import time"
+    },
+    {
+      "number": 12,
+      "text": "import traceback"
+    },
+    {
+      "number": 13,
+      "text": "from contextlib import redirect_stderr, redirect_stdout"
+    },
+    {
+      "number": 14,
+      "text": "from pathlib import Path"
+    },
+    {
+      "number": 15,
+      "text": "from typing import Any"
+    },
+    {
+      "number": 16,
+      "text": "from urllib.parse import quote, urlparse"
+    },
+    {
+      "number": 17,
+      "text": "from urllib.request import ProxyHandler, Request, build_opener"
+    },
+    {
+      "number": 18,
+      "text": ""
+    },
+    {
+      "number": 19,
+      "text": "from pydantic import BaseModel, Field, field_validator"
+    },
+    {
+      "number": 20,
+      "text": ""
+    },
+    {
+      "number": 21,
+      "text": "_BROWSER_MODES = {\"local_cdp\", \"local_launch\", \"local_persistent\"}"
+    },
+    {
+      "number": 22,
+      "text": "_DEFAULT_LOCAL_CDP_URL = \"http://127.0.0.1:9222\""
+    },
+    {
+      "number": 23,
+      "text": "_DEFAULT_LOCAL_CDP_USER_DATA_DIR = Path(\"~/.cache/webwright/edge-profile\")"
+    },
+    {
+      "number": 24,
+      "text": "_CHROMIUM_EXECUTABLE_CANDIDATES = ("
+    },
+    {
+      "number": 25,
+      "text": "    \"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge\","
+    },
+    {
+      "number": 26,
+      "text": "    \"~/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge\","
+    },
+    {
+      "number": 27,
+      "text": "    \"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome\","
+    },
+    {
+      "number": 28,
+      "text": "    \"~/Applications/Google Chrome.app/Contents/MacOS/Google Chrome\","
+    },
+    {
+      "number": 29,
+      "text": "    \"google-chrome\","
+    },
+    {
+      "number": 30,
+      "text": "    \"google-chrome-stable\","
+    },
+    {
+      "number": 31,
+      "text": "    \"chromium-browser\","
+    },
+    {
+      "number": 32,
+      "text": "    \"chromium\","
+    },
+    {
+      "number": 33,
+      "text": "    \"chrome\","
+    },
+    {
+      "number": 34,
+      "text": ")"
+    },
+    {
+      "number": 35,
+      "text": "_LOCAL_CDP_OPENER = build_opener(ProxyHandler({}))"
+    },
+    {
+      "number": 36,
+      "text": ""
+    },
+    {
+      "number": 37,
+      "text": ""
+    },
+    {
+      "number": 38,
+      "text": "def _urlopen_local_cdp(url_or_request: str | Request, *, timeout: float):"
+    },
+    {
+      "number": 39,
+      "text": "    return _LOCAL_CDP_OPENER.open(url_or_request, timeout=timeout)"
+    },
+    {
+      "number": 40,
+      "text": ""
+    },
+    {
+      "number": 41,
+      "text": ""
+    },
+    {
+      "number": 42,
+      "text": "def _local_cdp_origin(cdp_url: str) -> str:"
+    },
+    {
+      "number": 43,
+      "text": "    parsed = urlparse(cdp_url or _DEFAULT_LOCAL_CDP_URL)"
+    },
+    {
+      "number": 44,
+      "text": "    scheme = parsed.scheme or \"http\""
+    },
+    {
+      "number": 45,
+      "text": "    netloc = parsed.netloc or parsed.path"
+    },
+    {
+      "number": 46,
+      "text": "    if not netloc:"
+    },
+    {
+      "number": 47,
+      "text": "        netloc = urlparse(_DEFAULT_LOCAL_CDP_URL).netloc"
+    },
+    {
+      "number": 48,
+      "text": "    return f\"{scheme}://{netloc}\""
+    },
+    {
+      "number": 49,
+      "text": ""
+    },
+    {
+      "number": 50,
+      "text": ""
+    },
+    {
+      "number": 51,
+      "text": "def _local_cdp_port(cdp_url: str) -> int:"
+    },
+    {
+      "number": 52,
+      "text": "    parsed = urlparse(cdp_url or _DEFAULT_LOCAL_CDP_URL)"
+    },
+    {
+      "number": 53,
+      "text": "    if parsed.port is not None:"
+    },
+    {
+      "number": 54,
+      "text": "        return parsed.port"
+    },
+    {
+      "number": 55,
+      "text": "    return 443 if parsed.scheme == \"https\" else 80"
+    },
+    {
+      "number": 56,
+      "text": ""
+    },
+    {
+      "number": 57,
+      "text": ""
+    },
+    {
+      "number": 58,
+      "text": "def _is_local_cdp_available(cdp_url: str, *, timeout_seconds: float = 0.5) -> bool:"
+    },
+    {
+      "number": 59,
+      "text": "    try:"
+    },
+    {
+      "number": 60,
+      "text": "        with _urlopen_local_cdp("
+    },
+    {
+      "number": 61,
+      "text": "            f\"{_local_cdp_origin(cdp_url).rstrip('/')}/json/version\","
+    },
+    {
+      "number": 62,
+      "text": "            timeout=timeout_seconds,"
+    },
+    {
+      "number": 63,
+      "text": "        ) as response:"
+    },
+    {
+      "number": 64,
+      "text": "            return 200 <= response.status < 300"
+    },
+    {
+      "number": 65,
+      "text": "    except Exception:"
+    },
+    {
+      "number": 66,
+      "text": "        return False"
+    },
+    {
+      "number": 67,
+      "text": ""
+    },
+    {
+      "number": 68,
+      "text": ""
+    },
+    {
+      "number": 69,
+      "text": "def _local_cdp_json_url(cdp_url: str, path: str) -> str:"
+    },
+    {
+      "number": 70,
+      "text": "    return f\"{_local_cdp_origin(cdp_url).rstrip('/')}{path}\""
+    },
+    {
+      "number": 71,
+      "text": ""
+    },
+    {
+      "number": 72,
+      "text": ""
+    },
+    {
+      "number": 73,
+      "text": "def _local_cdp_page_targets(cdp_url: str, *, timeout_seconds: float = 0.5) -> list[dict[str, Any]]:"
+    },
+    {
+      "number": 74,
+      "text": "    try:"
+    },
+    {
+      "number": 75,
+      "text": "        with _urlopen_local_cdp("
+    },
+    {
+      "number": 76,
+      "text": "            _local_cdp_json_url(cdp_url, \"/json/list\"),"
+    },
+    {
+      "number": 77,
+      "text": "            timeout=timeout_seconds,"
+    },
+    {
+      "number": 78,
+      "text": "        ) as response:"
+    },
+    {
+      "number": 79,
+      "text": "            if not 200 <= response.status < 300:"
+    },
+    {
+      "number": 80,
+      "text": "                return []"
+    },
+    {
+      "number": 81,
+      "text": "            payload = json.loads(response.read().decode(\"utf-8\"))"
+    },
+    {
+      "number": 82,
+      "text": "    except Exception:"
+    },
+    {
+      "number": 83,
+      "text": "        return []"
+    },
+    {
+      "number": 84,
+      "text": "    if not isinstance(payload, list):"
+    },
+    {
+      "number": 85,
+      "text": "        return []"
+    },
+    {
+      "number": 86,
+      "text": "    return ["
+    },
+    {
+      "number": 87,
+      "text": "        target"
+    },
+    {
+      "number": 88,
+      "text": "        for target in payload"
+    },
+    {
+      "number": 89,
+      "text": "        if isinstance(target, dict) and target.get(\"type\") == \"page\""
+    },
+    {
+      "number": 90,
+      "text": "    ]"
+    },
+    {
+      "number": 91,
+      "text": ""
+    },
+    {
+      "number": 92,
+      "text": ""
+    },
+    {
+      "number": 93,
+      "text": "def _ensure_local_cdp_page_target(cdp_url: str, *, timeout_seconds: float = 1.0) -> None:"
+    },
+    {
+      "number": 94,
+      "text": "    if _local_cdp_page_targets(cdp_url, timeout_seconds=timeout_seconds):"
+    },
+    {
+      "number": 95,
+      "text": "        return"
+    },
+    {
+      "number": 96,
+      "text": ""
+    },
+    {
+      "number": 97,
+      "text": "    target_url = f\"{_local_cdp_json_url(cdp_url, '/json/new')}?{quote('about:blank', safe='')}\""
+    },
+    {
+      "number": 98,
+      "text": "    request = Request(target_url, method=\"PUT\")"
+    },
+    {
+      "number": 99,
+      "text": "    with _urlopen_local_cdp(request, timeout=timeout_seconds) as response:"
+    },
+    {
+      "number": 100,
+      "text": "        if not 200 <= response.status < 300:"
+    },
+    {
+      "number": 101,
+      "text": "            raise RuntimeError(f\"Could not create a local CDP page target: {cdp_url}\")"
+    },
+    {
+      "number": 102,
+      "text": ""
+    },
+    {
+      "number": 103,
+      "text": ""
+    },
+    {
+      "number": 104,
+      "text": "def _resolve_local_cdp_url(configured_url: str, *, explicit: bool) -> str:"
+    },
+    {
+      "number": 105,
+      "text": "    if explicit and configured_url:"
+    },
+    {
+      "number": 106,
+      "text": "        return configured_url"
+    },
+    {
+      "number": 107,
+      "text": "    return ("
+    },
+    {
+      "number": 108,
+      "text": "        os.environ.get(\"LOCAL_BROWSER_CDP_URL\")"
+    },
+    {
+      "number": 109,
+      "text": "        or os.environ.get(\"BROWSER_CDP_URL\")"
+    },
+    {
+      "number": 110,
+      "text": "        or configured_url"
+    },
+    {
+      "number": 111,
+      "text": "        or _DEFAULT_LOCAL_CDP_URL"
+    },
+    {
+      "number": 112,
+      "text": "    )"
+    },
+    {
+      "number": 113,
+      "text": ""
+    },
+    {
+      "number": 114,
+      "text": ""
+    },
+    {
+      "number": 115,
+      "text": "def _resolve_user_data_dir(configured_dir: Path, *, explicit: bool) -> Path:"
+    },
+    {
+      "number": 116,
+      "text": "    if explicit:"
+    },
+    {
+      "number": 117,
+      "text": "        return configured_dir"
+    },
+    {
+      "number": 118,
+      "text": "    env_dir = os.environ.get(\"LOCAL_BROWSER_USER_DATA_DIR\") or os.environ.get(\"BROWSER_USER_DATA_DIR\")"
+    },
+    {
+      "number": 119,
+      "text": "    return Path(env_dir).expanduser() if env_dir else _DEFAULT_LOCAL_CDP_USER_DATA_DIR.expanduser()"
+    },
+    {
+      "number": 120,
+      "text": ""
+    },
+    {
+      "number": 121,
+      "text": ""
+    },
+    {
+      "number": 122,
+      "text": "def _find_chromium_executable(explicit_path: str = \"\") -> str:"
+    },
+    {
+      "number": 123,
+      "text": "    candidates = []"
+    },
+    {
+      "number": 124,
+      "text": "    if explicit_path:"
+    },
+    {
+      "number": 125,
+      "text": "        candidates.append(explicit_path)"
+    },
+    {
+      "number": 126,
+      "text": "    candidates.extend("
+    },
+    {
+      "number": 127,
+      "text": "        value"
+    },
+    {
+      "number": 128,
+      "text": "        for value in (os.environ.get(\"LOCAL_BROWSER_EXECUTABLE\"), os.environ.get(\"BROWSER_EXECUTABLE\"))"
+    },
+    {
+      "number": 129,
+      "text": "        if value"
+    },
+    {
+      "number": 130,
+      "text": "    )"
+    },
+    {
+      "number": 131,
+      "text": "    candidates.extend(_CHROMIUM_EXECUTABLE_CANDIDATES)"
+    },
+    {
+      "number": 132,
+      "text": ""
+    },
+    {
+      "number": 133,
+      "text": "    for candidate in candidates:"
+    },
+    {
+      "number": 134,
+      "text": "        expanded = os.path.expanduser(candidate)"
+    },
+    {
+      "number": 135,
+      "text": "        if Path(expanded).exists():"
+    },
+    {
+      "number": 136,
+      "text": "            return expanded"
+    },
+    {
+      "number": 137,
+      "text": "        resolved = shutil.which(expanded)"
+    },
+    {
+      "number": 138,
+      "text": "        if resolved:"
+    },
+    {
+      "number": 139,
+      "text": "            return resolved"
+    },
+    {
+      "number": 140,
+      "text": "    raise FileNotFoundError("
+    },
+    {
+      "number": 141,
+      "text": "        \"Could not find Chrome/Chromium. Set local_cdp_executable or LOCAL_BROWSER_EXECUTABLE.\""
+    },
+    {
+      "number": 142,
+      "text": "    )"
+    },
+    {
+      "number": 143,
+      "text": ""
+    },
+    {
+      "number": 144,
+      "text": ""
+    },
+    {
+      "number": 145,
+      "text": "def _macos_open_app_name(executable: str) -> str:"
+    },
+    {
+      "number": 146,
+      "text": "    if sys.platform != \"darwin\":"
+    },
+    {
+      "number": 147,
+      "text": "        return \"\""
+    },
+    {
+      "number": 148,
+      "text": "    if \"/Microsoft Edge.app/\" in executable:"
+    },
+    {
+      "number": 149,
+      "text": "        return \"Microsoft Edge\""
+    },
+    {
+      "number": 150,
+      "text": "    if \"/Google Chrome.app/\" in executable:"
+    },
+    {
+      "number": 151,
+      "text": "        return \"Google Chrome\""
+    },
+    {
+      "number": 152,
+      "text": "    return \"\""
+    },
+    {
+      "number": 153,
+      "text": ""
+    },
+    {
+      "number": 154,
+      "text": ""
+    },
+    {
+      "number": 155,
+      "text": "class LocalBrowserEnvironmentConfig(BaseModel):"
+    },
+    {
+      "number": 156,
+      "text": "    start_url: str | None = None"
+    },
+    {
+      "number": 157,
+      "text": "    browser_mode: str = \"local_launch\""
+    },
+    {
+      "number": 158,
+      "text": "    headless: bool = False"
+    },
+    {
+      "number": 159,
+      "text": "    devtools: bool = False"
+    },
+    {
+      "number": 160,
+      "text": "    keep_open_on_exit: bool = False"
+    },
+    {
+      "number": 161,
+      "text": "    prompt_before_close: bool = False"
+    },
+    {
+      "number": 162,
+      "text": "    slow_mo_ms: int = 50"
+    },
+    {
+      "number": 163,
+      "text": "    browser_width: int = 1280"
+    },
+    {
+      "number": 164,
+      "text": "    browser_height: int = 1440"
+    },
+    {
+      "number": 165,
+      "text": "    browser_timeout_ms: int = 10000"
+    },
+    {
+      "number": 166,
+      "text": "    browser_navigation_timeout_ms: int = 30000"
+    },
+    {
+      "number": 167,
+      "text": "    step_execution_timeout_ms: int = 20000"
+    },
+    {
+      "number": 168,
+      "text": "    observation_timeout_ms: int = 5000"
+    },
+    {
+      "number": 169,
+      "text": "    output_dir: Path = Path(\"outputs/default\")"
+    },
+    {
+      "number": 170,
+      "text": "    user_data_dir: Path = _DEFAULT_LOCAL_CDP_USER_DATA_DIR"
+    },
+    {
+      "number": 171,
+      "text": "    launch_args: list[str] = Field(default_factory=list)"
+    },
+    {
+      "number": 172,
+      "text": "    local_cdp_url: str = _DEFAULT_LOCAL_CDP_URL"
+    },
+    {
+      "number": 173,
+      "text": "    local_cdp_new_page: bool = True"
+    },
+    {
+      "number": 174,
+      "text": "    local_cdp_close_page_on_exit: bool = False"
+    },
+    {
+      "number": 175,
+      "text": "    local_cdp_auto_start: bool = True"
+    },
+    {
+      "number": 176,
+      "text": "    local_cdp_executable: str = \"\""
+    },
+    {
+      "number": 177,
+      "text": "    local_cdp_startup_timeout_seconds: float = 10"
+    },
+    {
+      "number": 178,
+      "text": "    local_cdp_close_started_browser_on_exit: bool = False"
+    },
+    {
+      "number": 179,
+      "text": ""
+    },
+    {
+      "number": 180,
+      "text": "    @field_validator(\"browser_mode\")"
+    },
+    {
+      "number": 181,
+      "text": "    @classmethod"
+    },
+    {
+      "number": 182,
+      "text": "    def validate_browser_mode(cls, value: str) -> str:"
+    },
+    {
+      "number": 183,
+      "text": "        normalized = value.strip().lower().replace(\"-\", \"_\")"
+    },
+    {
+      "number": 184,
+      "text": "        if normalized not in _BROWSER_MODES:"
+    },
+    {
+      "number": 185,
+      "text": "            raise ValueError("
+    },
+    {
+      "number": 186,
+      "text": "                f\"browser_mode must be one of: {', '.join(sorted(_BROWSER_MODES))}\""
+    },
+    {
+      "number": 187,
+      "text": "            )"
+    },
+    {
+      "number": 188,
+      "text": "        return normalized"
+    },
+    {
+      "number": 189,
+      "text": ""
+    },
+    {
+      "number": 190,
+      "text": ""
+    },
+    {
+      "number": 191,
+      "text": "class LocalBrowserEnvironment:"
+    },
+    {
+      "number": 192,
+      "text": "    \"\"\"Live local Playwright browser environment."
+    },
+    {
+      "number": 193,
+      "text": ""
+    },
+    {
+      "number": 194,
+      "text": "    The environment owns the browser/page and executes each model action as an async"
+    },
+    {
+      "number": 195,
+      "text": "    Python snippet with ``page``, ``context``, ``browser``, ``playwright``, and"
+    },
+    {
+      "number": 196,
+      "text": "    ``task`` already available."
+    },
+    {
+      "number": 197,
+      "text": "    \"\"\""
+    },
+    {
+      "number": 198,
+      "text": ""
+    },
+    {
+      "number": 199,
+      "text": "    def __init__(self, *, config_class: type = LocalBrowserEnvironmentConfig, **kwargs):"
+    },
+    {
+      "number": 200,
+      "text": "        self.config = config_class(**kwargs)"
+    },
+    {
+      "number": 201,
+      "text": "        fields_set = getattr(self.config, \"model_fields_set\", None)"
+    },
+    {
+      "number": 202,
+      "text": "        if fields_set is None:"
+    },
+    {
+      "number": 203,
+      "text": "            fields_set = getattr(self.config, \"__fields_set__\", set())"
+    },
+    {
+      "number": 204,
+      "text": "        self._config_fields_set = set(fields_set)"
+    },
+    {
+      "number": 205,
+      "text": "        self.config.local_cdp_url = _resolve_local_cdp_url("
+    },
+    {
+      "number": 206,
+      "text": "            self.config.local_cdp_url,"
+    },
+    {
+      "number": 207,
+      "text": "            explicit=\"local_cdp_url\" in self._config_fields_set,"
+    },
+    {
+      "number": 208,
+      "text": "        )"
+    },
+    {
+      "number": 209,
+      "text": "        self.config.output_dir = self.config.output_dir.expanduser()"
+    },
+    {
+      "number": 210,
+      "text": "        self.config.user_data_dir = _resolve_user_data_dir("
+    },
+    {
+      "number": 211,
+      "text": "            self.config.user_data_dir,"
+    },
+    {
+      "number": 212,
+      "text": "            explicit=\"user_data_dir\" in self._config_fields_set,"
+    },
+    {
+      "number": 213,
+      "text": "        )"
+    },
+    {
+      "number": 214,
+      "text": "        self._playwright = None"
+    },
+    {
+      "number": 215,
+      "text": "        self._browser = None"
+    },
+    {
+      "number": 216,
+      "text": "        self._context = None"
+    },
+    {
+      "number": 217,
+      "text": "        self._page = None"
+    },
+    {
+      "number": 218,
+      "text": "        self._local_cdp_page = None"
+    },
+    {
+      "number": 219,
+      "text": "        self._loop: asyncio.AbstractEventLoop | None = None"
+    },
+    {
+      "number": 220,
+      "text": "        self._local_cdp_process: subprocess.Popen | None = None"
+    },
+    {
+      "number": 221,
+      "text": "        self._connected_over_cdp = False"
+    },
+    {
+      "number": 222,
+      "text": "        self._step_index = 0"
+    },
+    {
+      "number": 223,
+      "text": "        self._prepared_task: dict[str, Any] = {}"
+    },
+    {
+      "number": 224,
+      "text": "        self._console_history: list[str] = []"
+    },
+    {
+      "number": 225,
+      "text": "        self._step_console: list[str] = []"
+    },
+    {
+      "number": 226,
+      "text": "        self._step_python_code = \"\""
+    },
+    {
+      "number": 227,
+      "text": "        self._step_python_output = \"\""
+    },
+    {
+      "number": 228,
+      "text": ""
+    },
+    {
+      "number": 229,
+      "text": "    def _screenshots_dir(self) -> Path:"
+    },
+    {
+      "number": 230,
+      "text": "        return self.config.output_dir / \"screenshots\""
+    },
+    {
+      "number": 231,
+      "text": ""
+    },
+    {
+      "number": 232,
+      "text": "    def _steps_dir(self) -> Path:"
+    },
+    {
+      "number": 233,
+      "text": "        return self.config.output_dir / \"steps\""
+    },
+    {
+      "number": 234,
+      "text": ""
+    },
+    {
+      "number": 235,
+      "text": "    def prepare(self, **kwargs) -> None:"
+    },
+    {
+      "number": 236,
+      "text": "        self._prepared_task = dict(kwargs)"
+    },
+    {
+      "number": 237,
+      "text": "        self._step_index = 0"
+    },
+    {
+      "number": 238,
+      "text": "        self._console_history = []"
+    },
+    {
+      "number": 239,
+      "text": "        self._step_console = []"
+    },
+    {
+      "number": 240,
+      "text": "        start_url = kwargs.get(\"start_url\") or self.config.start_url"
+    },
+    {
+      "number": 241,
+      "text": "        if start_url:"
+    },
+    {
+      "number": 242,
+      "text": "            self.config.start_url = str(start_url)"
+    },
+    {
+      "number": 243,
+      "text": ""
+    },
+    {
+      "number": 244,
+      "text": "        self.config.output_dir.mkdir(parents=True, exist_ok=True)"
+    },
+    {
+      "number": 245,
+      "text": "        self._steps_dir().mkdir(parents=True, exist_ok=True)"
+    },
+    {
+      "number": 246,
+      "text": "        self._screenshots_dir().mkdir(parents=True, exist_ok=True)"
+    },
+    {
+      "number": 247,
+      "text": "        (self.config.output_dir / \"task.json\").write_text("
+    },
+    {
+      "number": 248,
+      "text": "            json.dumps(kwargs, indent=2),"
+    },
+    {
+      "number": 249,
+      "text": "            encoding=\"utf-8\","
+    },
+    {
+      "number": 250,
+      "text": "        )"
+    },
+    {
+      "number": 251,
+      "text": "        self._run(self._prepare_async())"
+    },
+    {
+      "number": 252,
+      "text": ""
+    },
+    {
+      "number": 253,
+      "text": "    def _ensure_loop(self) -> asyncio.AbstractEventLoop:"
+    },
+    {
+      "number": 254,
+      "text": "        if self._loop is None or self._loop.is_closed():"
+    },
+    {
+      "number": 255,
+      "text": "            self._loop = asyncio.new_event_loop()"
+    },
+    {
+      "number": 256,
+      "text": "        return self._loop"
+    },
+    {
+      "number": 257,
+      "text": ""
+    },
+    {
+      "number": 258,
+      "text": "    def _run(self, coro):"
+    },
+    {
+      "number": 259,
+      "text": "        loop = self._ensure_loop()"
+    },
+    {
+      "number": 260,
+      "text": "        return loop.run_until_complete(coro)"
+    },
+    {
+      "number": 261,
+      "text": ""
+    },
+    {
+      "number": 262,
+      "text": "    def _ensure_local_cdp_browser(self) -> None:"
+    },
+    {
+      "number": 263,
+      "text": "        if _is_local_cdp_available(self.config.local_cdp_url):"
+    },
+    {
+      "number": 264,
+      "text": "            return"
+    },
+    {
+      "number": 265,
+      "text": "        if not self.config.local_cdp_auto_start:"
+    },
+    {
+      "number": 266,
+      "text": "            raise RuntimeError("
+    },
+    {
+      "number": 267,
+      "text": "                \"Local CDP endpoint is not reachable. Start Chrome/Chromium with \""
+    },
+    {
+      "number": 268,
+      "text": "                f\"remote debugging enabled for {self.config.local_cdp_url}.\""
+    },
+    {
+      "number": 269,
+      "text": "            )"
+    },
+    {
+      "number": 270,
+      "text": ""
+    },
+    {
+      "number": 271,
+      "text": "        self.config.user_data_dir.mkdir(parents=True, exist_ok=True)"
+    },
+    {
+      "number": 272,
+      "text": "        browser_args = list(self.config.launch_args)"
+    },
+    {
+      "number": 273,
+      "text": "        executable = _find_chromium_executable(self.config.local_cdp_executable)"
+    },
+    {
+      "number": 274,
+      "text": "        browser_flags = ["
+    },
+    {
+      "number": 275,
+      "text": "            \"--remote-debugging-address=127.0.0.1\","
+    },
+    {
+      "number": 276,
+      "text": "            f\"--remote-debugging-port={_local_cdp_port(self.config.local_cdp_url)}\","
+    },
+    {
+      "number": 277,
+      "text": "            f\"--user-data-dir={self.config.user_data_dir}\","
+    },
+    {
+      "number": 278,
+      "text": "            \"--no-first-run\","
+    },
+    {
+      "number": 279,
+      "text": "            \"--no-default-browser-check\","
+    },
+    {
+      "number": 280,
+      "text": "            *browser_args,"
+    },
+    {
+      "number": 281,
+      "text": "        ]"
+    },
+    {
+      "number": 282,
+      "text": "        app_name = _macos_open_app_name(executable)"
+    },
+    {
+      "number": 283,
+      "text": "        launched_with_open = bool(app_name)"
+    },
+    {
+      "number": 284,
+      "text": "        command = ("
+    },
+    {
+      "number": 285,
+      "text": "            [\"open\", \"-na\", app_name, \"--args\", *browser_flags]"
+    },
+    {
+      "number": 286,
+      "text": "            if launched_with_open"
+    },
+    {
+      "number": 287,
+      "text": "            else [executable, *browser_flags]"
+    },
+    {
+      "number": 288,
+      "text": "        )"
+    },
+    {
+      "number": 289,
+      "text": "        self._local_cdp_process = subprocess.Popen("
+    },
+    {
+      "number": 290,
+      "text": "            command,"
+    },
+    {
+      "number": 291,
+      "text": "            stdout=subprocess.DEVNULL,"
+    },
+    {
+      "number": 292,
+      "text": "            stderr=subprocess.DEVNULL,"
+    },
+    {
+      "number": 293,
+      "text": "            start_new_session=True,"
+    },
+    {
+      "number": 294,
+      "text": "        )"
+    },
+    {
+      "number": 295,
+      "text": ""
+    },
+    {
+      "number": 296,
+      "text": "        deadline = time.monotonic() + self.config.local_cdp_startup_timeout_seconds"
+    },
+    {
+      "number": 297,
+      "text": "        while time.monotonic() < deadline:"
+    },
+    {
+      "number": 298,
+      "text": "            if not launched_with_open and self._local_cdp_process.poll() is not None:"
+    },
+    {
+      "number": 299,
+      "text": "                raise RuntimeError("
+    },
+    {
+      "number": 300,
+      "text": "                    f\"Chrome/Chromium exited before CDP became available: {self.config.local_cdp_url}\""
+    },
+    {
+      "number": 301,
+      "text": "                )"
+    },
+    {
+      "number": 302,
+      "text": "            if _is_local_cdp_available(self.config.local_cdp_url):"
+    },
+    {
+      "number": 303,
+      "text": "                return"
+    },
+    {
+      "number": 304,
+      "text": "            time.sleep(0.2)"
+    },
+    {
+      "number": 305,
+      "text": ""
+    },
+    {
+      "number": 306,
+      "text": "        self._local_cdp_process.terminate()"
+    },
+    {
+      "number": 307,
+      "text": "        self._local_cdp_process = None"
+    },
+    {
+      "number": 308,
+      "text": "        raise TimeoutError(f\"Timed out waiting for local CDP endpoint: {self.config.local_cdp_url}\")"
+    },
+    {
+      "number": 309,
+      "text": ""
+    },
+    {
+      "number": 310,
+      "text": "    async def _prepare_async(self) -> None:"
+    },
+    {
+      "number": 311,
+      "text": "        from playwright.async_api import async_playwright"
+    },
+    {
+      "number": 312,
+      "text": ""
+    },
+    {
+      "number": 313,
+      "text": "        if self._page is not None and self._context is not None:"
+    },
+    {
+      "number": 314,
+      "text": "            return"
+    },
+    {
+      "number": 315,
+      "text": ""
+    },
+    {
+      "number": 316,
+      "text": "        self._playwright = await async_playwright().start()"
+    },
+    {
+      "number": 317,
+      "text": "        chromium = self._playwright.chromium"
+    },
+    {
+      "number": 318,
+      "text": "        launch_args = list(self.config.launch_args)"
+    },
+    {
+      "number": 319,
+      "text": "        if self.config.devtools:"
+    },
+    {
+      "number": 320,
+      "text": "            launch_args.append(\"--auto-open-devtools-for-tabs\")"
+    },
+    {
+      "number": 321,
+      "text": "        launch_kwargs = {"
+    },
+    {
+      "number": 322,
+      "text": "            \"headless\": self.config.headless,"
+    },
+    {
+      "number": 323,
+      "text": "            \"slow_mo\": self.config.slow_mo_ms,"
+    },
+    {
+      "number": 324,
+      "text": "            \"args\": launch_args,"
+    },
+    {
+      "number": 325,
+      "text": "        }"
+    },
+    {
+      "number": 326,
+      "text": ""
+    },
+    {
+      "number": 327,
+      "text": "        if self.config.browser_mode == \"local_cdp\":"
+    },
+    {
+      "number": 328,
+      "text": "            self._ensure_local_cdp_browser()"
+    },
+    {
+      "number": 329,
+      "text": "            _ensure_local_cdp_page_target(self.config.local_cdp_url)"
+    },
+    {
+      "number": 330,
+      "text": "            self._browser = await chromium.connect_over_cdp(self.config.local_cdp_url)"
+    },
+    {
+      "number": 331,
+      "text": "            self._connected_over_cdp = True"
+    },
+    {
+      "number": 332,
+      "text": "            self._context = ("
+    },
+    {
+      "number": 333,
+      "text": "                self._browser.contexts[0]"
+    },
+    {
+      "number": 334,
+      "text": "                if self._browser.contexts"
+    },
+    {
+      "number": 335,
+      "text": "                else await self._browser.new_context(no_viewport=True)"
+    },
+    {
+      "number": 336,
+      "text": "            )"
+    },
+    {
+      "number": 337,
+      "text": "            if self.config.local_cdp_new_page or not self._context.pages:"
+    },
+    {
+      "number": 338,
+      "text": "                self._page = await self._context.new_page()"
+    },
+    {
+      "number": 339,
+      "text": "                self._local_cdp_page = self._page"
+    },
+    {
+      "number": 340,
+      "text": "            else:"
+    },
+    {
+      "number": 341,
+      "text": "                self._page = self._context.pages[0]"
+    },
+    {
+      "number": 342,
+      "text": "        elif self.config.browser_mode == \"local_persistent\":"
+    },
+    {
+      "number": 343,
+      "text": "            self.config.user_data_dir.mkdir(parents=True, exist_ok=True)"
+    },
+    {
+      "number": 344,
+      "text": "            self._context = await chromium.launch_persistent_context("
+    },
+    {
+      "number": 345,
+      "text": "                user_data_dir=str(self.config.user_data_dir),"
+    },
+    {
+      "number": 346,
+      "text": "                viewport={"
+    },
+    {
+      "number": 347,
+      "text": "                    \"width\": self.config.browser_width,"
+    },
+    {
+      "number": 348,
+      "text": "                    \"height\": self.config.browser_height,"
+    },
+    {
+      "number": 349,
+      "text": "                },"
+    },
+    {
+      "number": 350,
+      "text": "                **launch_kwargs,"
+    },
+    {
+      "number": 351,
+      "text": "            )"
+    },
+    {
+      "number": 352,
+      "text": "            self._browser = self._context.browser"
+    },
+    {
+      "number": 353,
+      "text": "            self._page = self._context.pages[0] if self._context.pages else await self._context.new_page()"
+    },
+    {
+      "number": 354,
+      "text": "        else:"
+    },
+    {
+      "number": 355,
+      "text": "            self._browser = await chromium.launch(**launch_kwargs)"
+    },
+    {
+      "number": 356,
+      "text": "            self._context = await self._browser.new_context("
+    },
+    {
+      "number": 357,
+      "text": "                viewport={"
+    },
+    {
+      "number": 358,
+      "text": "                    \"width\": self.config.browser_width,"
+    },
+    {
+      "number": 359,
+      "text": "                    \"height\": self.config.browser_height,"
+    },
+    {
+      "number": 360,
+      "text": "                }"
+    },
+    {
+      "number": 361,
+      "text": "            )"
+    },
+    {
+      "number": 362,
+      "text": "            self._page = await self._context.new_page()"
+    },
+    {
+      "number": 363,
+      "text": ""
+    },
+    {
+      "number": 364,
+      "text": "        self._context.set_default_timeout(self.config.browser_timeout_ms)"
+    },
+    {
+      "number": 365,
+      "text": "        self._context.set_default_navigation_timeout(self.config.browser_navigation_timeout_ms)"
+    },
+    {
+      "number": 366,
+      "text": "        self._attach_page_listeners(self._page)"
+    },
+    {
+      "number": 367,
+      "text": "        if self.config.start_url:"
+    },
+    {
+      "number": 368,
+      "text": "            await self._page.goto(self.config.start_url, wait_until=\"domcontentloaded\")"
+    },
+    {
+      "number": 369,
+      "text": ""
+    },
+    {
+      "number": 370,
+      "text": "    def _attach_page_listeners(self, page: Any) -> None:"
+    },
+    {
+      "number": 371,
+      "text": "        page.on(\"console\", self._on_console_message)"
+    },
+    {
+      "number": 372,
+      "text": "        page.on(\"pageerror\", self._on_page_error)"
+    },
+    {
+      "number": 373,
+      "text": ""
+    },
+    {
+      "number": 374,
+      "text": "    def _on_console_message(self, message: Any) -> None:"
+    },
+    {
+      "number": 375,
+      "text": "        text = getattr(message, \"text\", \"\")"
+    },
+    {
+      "number": 376,
+      "text": "        if callable(text):"
+    },
+    {
+      "number": 377,
+      "text": "            text = text()"
+    },
+    {
+      "number": 378,
+      "text": "        line = str(text)"
+    },
+    {
+      "number": 379,
+      "text": "        self._console_history.append(line)"
+    },
+    {
+      "number": 380,
+      "text": "        self._step_console.append(line)"
+    },
+    {
+      "number": 381,
+      "text": ""
+    },
+    {
+      "number": 382,
+      "text": "    def _on_page_error(self, error: Any) -> None:"
+    },
+    {
+      "number": 383,
+      "text": "        line = f\"Page error: {error}\""
+    },
+    {
+      "number": 384,
+      "text": "        self._console_history.append(line)"
+    },
+    {
+      "number": 385,
+      "text": "        self._step_console.append(line)"
+    },
+    {
+      "number": 386,
+      "text": ""
+    },
+    {
+      "number": 387,
+      "text": "    def execute(self, action: dict[str, Any], cwd: str = \"\") -> dict[str, Any]:"
+    },
+    {
+      "number": 388,
+      "text": "        del cwd"
+    },
+    {
+      "number": 389,
+      "text": "        return self._run(self._execute_async(action))"
+    },
+    {
+      "number": 390,
+      "text": ""
+    },
+    {
+      "number": 391,
+      "text": "    async def _execute_async(self, action: dict[str, Any]) -> dict[str, Any]:"
+    },
+    {
+      "number": 392,
+      "text": "        self._step_index += 1"
+    },
+    {
+      "number": 393,
+      "text": "        self._step_console = []"
+    },
+    {
+      "number": 394,
+      "text": "        self._step_python_output = \"\""
+    },
+    {
+      "number": 395,
+      "text": "        self._step_python_code = str(action.get(\"python_code\", \"\") or \"\")"
+    },
+    {
+      "number": 396,
+      "text": "        self._persist_step_code(self._step_python_code)"
+    },
+    {
+      "number": 397,
+      "text": ""
+    },
+    {
+      "number": 398,
+      "text": "        success = True"
+    },
+    {
+      "number": 399,
+      "text": "        exception_text = \"\""
+    },
+    {
+      "number": 400,
+      "text": "        try:"
+    },
+    {
+      "number": 401,
+      "text": "            if self._step_python_code.strip():"
+    },
+    {
+      "number": 402,
+      "text": "                await asyncio.wait_for("
+    },
+    {
+      "number": 403,
+      "text": "                    self._run_python_code(self._step_python_code),"
+    },
+    {
+      "number": 404,
+      "text": "                    timeout=self.config.step_execution_timeout_ms / 1000,"
+    },
+    {
+      "number": 405,
+      "text": "                )"
+    },
+    {
+      "number": 406,
+      "text": "            await self._wait_for_observation_ready()"
+    },
+    {
+      "number": 407,
+      "text": "        except Exception:"
+    },
+    {
+      "number": 408,
+      "text": "            success = False"
+    },
+    {
+      "number": 409,
+      "text": "            exception_text = traceback.format_exc()"
+    },
+    {
+      "number": 410,
+      "text": ""
+    },
+    {
+      "number": 411,
+      "text": "        observation = await self._capture_observation("
+    },
+    {
+      "number": 412,
+      "text": "            success=success,"
+    },
+    {
+      "number": 413,
+      "text": "            exception_text=exception_text,"
+    },
+    {
+      "number": 414,
+      "text": "        )"
+    },
+    {
+      "number": 415,
+      "text": "        return {"
+    },
+    {
+      "number": 416,
+      "text": "            \"output\": self._step_python_output,"
+    },
+    {
+      "number": 417,
+      "text": "            \"returncode\": 0 if success else 1,"
+    },
+    {
+      "number": 418,
+      "text": "            \"exception_info\": exception_text,"
+    },
+    {
+      "number": 419,
+      "text": "            \"observation\": observation,"
+    },
+    {
+      "number": 420,
+      "text": "        }"
+    },
+    {
+      "number": 421,
+      "text": ""
+    },
+    {
+      "number": 422,
+      "text": "    def _persist_step_code(self, python_code: str) -> None:"
+    },
+    {
+      "number": 423,
+      "text": "        step_path = self._steps_dir() / f\"step_{self._step_index:04d}.py\""
+    },
+    {
+      "number": 424,
+      "text": "        step_path.write_text(python_code, encoding=\"utf-8\")"
+    },
+    {
+      "number": 425,
+      "text": ""
+    },
+    {
+      "number": 426,
+      "text": "        script_path = self.config.output_dir / \"script.py\""
+    },
+    {
+      "number": 427,
+      "text": "        with script_path.open(\"a\", encoding=\"utf-8\") as handle:"
+    },
+    {
+      "number": 428,
+      "text": "            handle.write(f\"\\n\\n# Step {self._step_index}\\n\")"
+    },
+    {
+      "number": 429,
+      "text": "            handle.write(python_code)"
+    },
+    {
+      "number": 430,
+      "text": "            handle.write(\"\\n\")"
+    },
+    {
+      "number": 431,
+      "text": ""
+    },
+    {
+      "number": 432,
+      "text": "    async def _run_python_code(self, python_code: str) -> None:"
+    },
+    {
+      "number": 433,
+      "text": "        if self._page is None or self._context is None or self._playwright is None:"
+    },
+    {
+      "number": 434,
+      "text": "            raise RuntimeError(\"Browser environment was not prepared.\")"
+    },
+    {
+      "number": 435,
+      "text": ""
+    },
+    {
+      "number": 436,
+      "text": "        buffer = io.StringIO()"
+    },
+    {
+      "number": 437,
+      "text": "        globals_dict: dict[str, Any] = {\"asyncio\": asyncio}"
+    },
+    {
+      "number": 438,
+      "text": "        locals_dict: dict[str, Any] = {}"
+    },
+    {
+      "number": 439,
+      "text": "        wrapped = \"async def __agent_step__(page, context, browser, playwright, task):\\n\""
+    },
+    {
+      "number": 440,
+      "text": "        wrapped += textwrap.indent(python_code, \"    \")"
+    },
+    {
+      "number": 441,
+      "text": "        with redirect_stdout(buffer), redirect_stderr(buffer):"
+    },
+    {
+      "number": 442,
+      "text": "            exec(wrapped, globals_dict, locals_dict)"
+    },
+    {
+      "number": 443,
+      "text": "            await locals_dict[\"__agent_step__\"]("
+    },
+    {
+      "number": 444,
+      "text": "                self._page,"
+    },
+    {
+      "number": 445,
+      "text": "                self._context,"
+    },
+    {
+      "number": 446,
+      "text": "                self._browser,"
+    },
+    {
+      "number": 447,
+      "text": "                self._playwright,"
+    },
+    {
+      "number": 448,
+      "text": "                self._prepared_task,"
+    },
+    {
+      "number": 449,
+      "text": "            )"
+    },
+    {
+      "number": 450,
+      "text": "        self._step_python_output = buffer.getvalue()"
+    },
+    {
+      "number": 451,
+      "text": ""
+    },
+    {
+      "number": 452,
+      "text": "    async def _wait_for_observation_ready(self) -> None:"
+    },
+    {
+      "number": 453,
+      "text": "        if self._page is None:"
+    },
+    {
+      "number": 454,
+      "text": "            return"
+    },
+    {
+      "number": 455,
+      "text": "        try:"
+    },
+    {
+      "number": 456,
+      "text": "            await self._page.wait_for_load_state("
+    },
+    {
+      "number": 457,
+      "text": "                \"domcontentloaded\","
+    },
+    {
+      "number": 458,
+      "text": "                timeout=self.config.observation_timeout_ms,"
+    },
+    {
+      "number": 459,
+      "text": "            )"
+    },
+    {
+      "number": 460,
+      "text": "        except Exception:"
+    },
+    {
+      "number": 461,
+      "text": "            pass"
+    },
+    {
+      "number": 462,
+      "text": ""
+    },
+    {
+      "number": 463,
+      "text": "    async def _capture_observation(self, *, success: bool, exception_text: str) -> dict[str, Any]:"
+    },
+    {
+      "number": 464,
+      "text": "        page = self._page"
+    },
+    {
+      "number": 465,
+      "text": "        url = \"\""
+    },
+    {
+      "number": 466,
+      "text": "        title = \"\""
+    },
+    {
+      "number": 467,
+      "text": "        aria_snapshot = \"\""
+    },
+    {
+      "number": 468,
+      "text": "        screenshot_path: Path | None = None"
+    },
+    {
+      "number": 469,
+      "text": ""
+    },
+    {
+      "number": 470,
+      "text": "        if page is not None:"
+    },
+    {
+      "number": 471,
+      "text": "            try:"
+    },
+    {
+      "number": 472,
+      "text": "                url = page.url"
+    },
+    {
+      "number": 473,
+      "text": "            except Exception:"
+    },
+    {
+      "number": 474,
+      "text": "                url = self.config.start_url or \"\""
+    },
+    {
+      "number": 475,
+      "text": "            try:"
+    },
+    {
+      "number": 476,
+      "text": "                title = await page.title()"
+    },
+    {
+      "number": 477,
+      "text": "            except Exception:"
+    },
+    {
+      "number": 478,
+      "text": "                title = \"\""
+    },
+    {
+      "number": 479,
+      "text": "            try:"
+    },
+    {
+      "number": 480,
+      "text": "                aria_snapshot = await page.locator(\"body\").aria_snapshot("
+    },
+    {
+      "number": 481,
+      "text": "                    timeout=self.config.observation_timeout_ms,"
+    },
+    {
+      "number": 482,
+      "text": "                )"
+    },
+    {
+      "number": 483,
+      "text": "            except Exception:"
+    },
+    {
+      "number": 484,
+      "text": "                aria_snapshot = \"\""
+    },
+    {
+      "number": 485,
+      "text": "            try:"
+    },
+    {
+      "number": 486,
+      "text": "                screenshot_path = self._screenshots_dir() / f\"step_{self._step_index:04d}.png\""
+    },
+    {
+      "number": 487,
+      "text": "                await page.screenshot(path=str(screenshot_path), full_page=False)"
+    },
+    {
+      "number": 488,
+      "text": "            except Exception:"
+    },
+    {
+      "number": 489,
+      "text": "                screenshot_path = None"
+    },
+    {
+      "number": 490,
+      "text": ""
+    },
+    {
+      "number": 491,
+      "text": "        return {"
+    },
+    {
+      "number": 492,
+      "text": "            \"success\": success,"
+    },
+    {
+      "number": 493,
+      "text": "            \"exception\": exception_text,"
+    },
+    {
+      "number": 494,
+      "text": "            \"url\": url or self.config.start_url or \"\","
+    },
+    {
+      "number": 495,
+      "text": "            \"title\": title,"
+    },
+    {
+      "number": 496,
+      "text": "            \"screenshot_path\": str(screenshot_path) if screenshot_path is not None else \"\","
+    },
+    {
+      "number": 497,
+      "text": "            \"aria_snapshot\": aria_snapshot,"
+    },
+    {
+      "number": 498,
+      "text": "            \"python_code\": self._step_python_code,"
+    },
+    {
+      "number": 499,
+      "text": "            \"python_output\": self._step_python_output,"
+    },
+    {
+      "number": 500,
+      "text": "            \"console_output\": \"\\n\".join(self._step_console[-20:]),"
+    },
+    {
+      "number": 501,
+      "text": "            \"recent_console\": \"\\n\".join(self._console_history[-50:]),"
+    },
+    {
+      "number": 502,
+      "text": "        }"
+    },
+    {
+      "number": 503,
+      "text": ""
+    },
+    {
+      "number": 504,
+      "text": "    def get_template_vars(self, **kwargs) -> dict[str, Any]:"
+    },
+    {
+      "number": 505,
+      "text": "        return {"
+    },
+    {
+      "number": 506,
+      "text": "            \"start_url\": self.config.start_url or \"\","
+    },
+    {
+      "number": 507,
+      "text": "            \"output_dir\": str(self.config.output_dir.resolve()),"
+    },
+    {
+      "number": 508,
+      "text": "            \"browser_mode\": self.config.browser_mode,"
+    },
+    {
+      "number": 509,
+      "text": "            \"user_data_dir\": str(self.config.user_data_dir),"
+    },
+    {
+      "number": 510,
+      "text": "            **kwargs,"
+    },
+    {
+      "number": 511,
+      "text": "        }"
+    },
+    {
+      "number": 512,
+      "text": ""
+    },
+    {
+      "number": 513,
+      "text": "    def serialize(self) -> dict[str, Any]:"
+    },
+    {
+      "number": 514,
+      "text": "        return {"
+    },
+    {
+      "number": 515,
+      "text": "            \"environment\": {"
+    },
+    {
+      "number": 516,
+      "text": "                \"config\": self.config.model_dump(mode=\"json\"),"
+    },
+    {
+      "number": 517,
+      "text": "                \"environment_type\": f\"{self.__class__.__module__}.{self.__class__.__name__}\","
+    },
+    {
+      "number": 518,
+      "text": "            }"
+    },
+    {
+      "number": 519,
+      "text": "        }"
+    },
+    {
+      "number": 520,
+      "text": ""
+    },
+    {
+      "number": 521,
+      "text": "    def close(self) -> None:"
+    },
+    {
+      "number": 522,
+      "text": "        if self.config.prompt_before_close:"
+    },
+    {
+      "number": 523,
+      "text": "            input(\"Press Enter to close the browser...\")"
+    },
+    {
+      "number": 524,
+      "text": "        if self.config.keep_open_on_exit:"
+    },
+    {
+      "number": 525,
+      "text": "            return"
+    },
+    {
+      "number": 526,
+      "text": "        try:"
+    },
+    {
+      "number": 527,
+      "text": "            self._run(self._close_async())"
+    },
+    {
+      "number": 528,
+      "text": "        finally:"
+    },
+    {
+      "number": 529,
+      "text": "            if self._loop is not None and not self._loop.is_closed():"
+    },
+    {
+      "number": 530,
+      "text": "                self._loop.close()"
+    },
+    {
+      "number": 531,
+      "text": "            self._loop = None"
+    },
+    {
+      "number": 532,
+      "text": ""
+    },
+    {
+      "number": 533,
+      "text": "    async def _close_async(self) -> None:"
+    },
+    {
+      "number": 534,
+      "text": ""
+    },
+    {
+      "number": 535,
+      "text": "        context = self._context"
+    },
+    {
+      "number": 536,
+      "text": "        browser = self._browser"
+    },
+    {
+      "number": 537,
+      "text": "        page = self._local_cdp_page"
+    },
+    {
+      "number": 538,
+      "text": "        playwright = self._playwright"
+    },
+    {
+      "number": 539,
+      "text": "        connected_over_cdp = self._connected_over_cdp"
+    },
+    {
+      "number": 540,
+      "text": "        local_cdp_process = self._local_cdp_process"
+    },
+    {
+      "number": 541,
+      "text": "        self._page = None"
+    },
+    {
+      "number": 542,
+      "text": "        self._local_cdp_page = None"
+    },
+    {
+      "number": 543,
+      "text": "        self._context = None"
+    },
+    {
+      "number": 544,
+      "text": "        self._browser = None"
+    },
+    {
+      "number": 545,
+      "text": "        self._playwright = None"
+    },
+    {
+      "number": 546,
+      "text": "        self._connected_over_cdp = False"
+    },
+    {
+      "number": 547,
+      "text": "        self._local_cdp_process = None"
+    },
+    {
+      "number": 548,
+      "text": ""
+    },
+    {
+      "number": 549,
+      "text": "        try:"
+    },
+    {
+      "number": 550,
+      "text": "            if connected_over_cdp:"
+    },
+    {
+      "number": 551,
+      "text": "                if page is not None and self.config.local_cdp_close_page_on_exit:"
+    },
+    {
+      "number": 552,
+      "text": "                    try:"
+    },
+    {
+      "number": 553,
+      "text": "                        await page.close()"
+    },
+    {
+      "number": 554,
+      "text": "                    except Exception:"
+    },
+    {
+      "number": 555,
+      "text": "                        pass"
+    },
+    {
+      "number": 556,
+      "text": "                if ("
+    },
+    {
+      "number": 557,
+      "text": "                    local_cdp_process is not None"
+    },
+    {
+      "number": 558,
+      "text": "                    and self.config.local_cdp_close_started_browser_on_exit"
+    },
+    {
+      "number": 559,
+      "text": "                ):"
+    },
+    {
+      "number": 560,
+      "text": "                    local_cdp_process.terminate()"
+    },
+    {
+      "number": 561,
+      "text": "            elif context is not None:"
+    },
+    {
+      "number": 562,
+      "text": "                await context.close()"
+    },
+    {
+      "number": 563,
+      "text": "            elif browser is not None:"
+    },
+    {
+      "number": 564,
+      "text": "                await browser.close()"
+    },
+    {
+      "number": 565,
+      "text": "        finally:"
+    },
+    {
+      "number": 566,
+      "text": "            if playwright is not None:"
+    },
+    {
+      "number": 567,
+      "text": "                await playwright.stop()"
+    }
+  ],
+  "error": null
+}

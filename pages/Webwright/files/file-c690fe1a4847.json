@@ -1,0 +1,776 @@
+{
+  "id": "file-c690fe1a4847",
+  "path": "src/webwright/models/anthropic_model.py",
+  "language": "python",
+  "lines": [
+    {
+      "number": 1,
+      "text": "\"\"\"Anthropic (Claude) Messages API model backend.\"\"\""
+    },
+    {
+      "number": 2,
+      "text": ""
+    },
+    {
+      "number": 3,
+      "text": "from __future__ import annotations"
+    },
+    {
+      "number": 4,
+      "text": ""
+    },
+    {
+      "number": 5,
+      "text": "import asyncio"
+    },
+    {
+      "number": 6,
+      "text": "import random"
+    },
+    {
+      "number": 7,
+      "text": "from typing import Any"
+    },
+    {
+      "number": 8,
+      "text": ""
+    },
+    {
+      "number": 9,
+      "text": "from webwright.models.base import ("
+    },
+    {
+      "number": 10,
+      "text": "    BaseModel,"
+    },
+    {
+      "number": 11,
+      "text": "    BaseModelConfig,"
+    },
+    {
+      "number": 12,
+      "text": "    OptStr,"
+    },
+    {
+      "number": 13,
+      "text": "    _safe_int,"
+    },
+    {
+      "number": 14,
+      "text": ")"
+    },
+    {
+      "number": 15,
+      "text": ""
+    },
+    {
+      "number": 16,
+      "text": "# Anthropic-specific retry limits (independent of OpenAI defaults). The Claude"
+    },
+    {
+      "number": 17,
+      "text": "# Opus org-level ITPM cap can saturate for minutes at high concurrency, so we"
+    },
+    {
+      "number": 18,
+      "text": "# allow many more retries and longer backoffs."
+    },
+    {
+      "number": 19,
+      "text": "MAX_RATE_LIMIT_RETRIES = 50"
+    },
+    {
+      "number": 20,
+      "text": "MAX_TRANSIENT_GATEWAY_RETRIES = 20"
+    },
+    {
+      "number": 21,
+      "text": "RATE_LIMIT_BACKOFF_MIN_SECONDS = 30.0"
+    },
+    {
+      "number": 22,
+      "text": "RATE_LIMIT_BACKOFF_MAX_SECONDS = 60.0"
+    },
+    {
+      "number": 23,
+      "text": "TRANSIENT_BACKOFF_BASE_SECONDS = 1.5"
+    },
+    {
+      "number": 24,
+      "text": "TRANSIENT_BACKOFF_CAP_SECONDS = 60.0"
+    },
+    {
+      "number": 25,
+      "text": ""
+    },
+    {
+      "number": 26,
+      "text": ""
+    },
+    {
+      "number": 27,
+      "text": "def _retry_after_seconds(exc: BaseException) -> float | None:"
+    },
+    {
+      "number": 28,
+      "text": "    response = getattr(exc, \"response\", None)"
+    },
+    {
+      "number": 29,
+      "text": "    if response is None:"
+    },
+    {
+      "number": 30,
+      "text": "        return None"
+    },
+    {
+      "number": 31,
+      "text": "    header = response.headers.get(\"retry-after\") if getattr(response, \"headers\", None) else None"
+    },
+    {
+      "number": 32,
+      "text": "    if not header:"
+    },
+    {
+      "number": 33,
+      "text": "        return None"
+    },
+    {
+      "number": 34,
+      "text": "    try:"
+    },
+    {
+      "number": 35,
+      "text": "        return max(0.0, float(header))"
+    },
+    {
+      "number": 36,
+      "text": "    except (TypeError, ValueError):"
+    },
+    {
+      "number": 37,
+      "text": "        return None"
+    },
+    {
+      "number": 38,
+      "text": ""
+    },
+    {
+      "number": 39,
+      "text": ""
+    },
+    {
+      "number": 40,
+      "text": "def _image_source_from_url(image_url: str) -> dict[str, Any]:"
+    },
+    {
+      "number": 41,
+      "text": "    if image_url.startswith(\"data:\"):"
+    },
+    {
+      "number": 42,
+      "text": "        header, _, encoded = image_url.partition(\",\")"
+    },
+    {
+      "number": 43,
+      "text": "        media_type = header.split(\";\")[0].removeprefix(\"data:\") or \"image/png\""
+    },
+    {
+      "number": 44,
+      "text": "        return {\"type\": \"base64\", \"media_type\": media_type, \"data\": encoded}"
+    },
+    {
+      "number": 45,
+      "text": "    return {\"type\": \"url\", \"url\": image_url}"
+    },
+    {
+      "number": 46,
+      "text": ""
+    },
+    {
+      "number": 47,
+      "text": ""
+    },
+    {
+      "number": 48,
+      "text": "def _serialize_anthropic_content_part(part: dict[str, Any]) -> dict[str, Any]:"
+    },
+    {
+      "number": 49,
+      "text": "    if part.get(\"type\") == \"input_image\":"
+    },
+    {
+      "number": 50,
+      "text": "        return {\"type\": \"image\", \"source\": _image_source_from_url(part.get(\"image_url\", \"\"))}"
+    },
+    {
+      "number": 51,
+      "text": "    return {\"type\": \"text\", \"text\": part.get(\"text\", \"\")}"
+    },
+    {
+      "number": 52,
+      "text": ""
+    },
+    {
+      "number": 53,
+      "text": ""
+    },
+    {
+      "number": 54,
+      "text": "def _serialize_anthropic_messages("
+    },
+    {
+      "number": 55,
+      "text": "    messages: list[dict[str, Any]],"
+    },
+    {
+      "number": 56,
+      "text": ") -> tuple[str | None, list[dict[str, Any]]]:"
+    },
+    {
+      "number": 57,
+      "text": "    system_chunks: list[str] = []"
+    },
+    {
+      "number": 58,
+      "text": "    serialized: list[dict[str, Any]] = []"
+    },
+    {
+      "number": 59,
+      "text": "    for message in messages:"
+    },
+    {
+      "number": 60,
+      "text": "        role = message[\"role\"]"
+    },
+    {
+      "number": 61,
+      "text": "        if role == \"exit\":"
+    },
+    {
+      "number": 62,
+      "text": "            continue"
+    },
+    {
+      "number": 63,
+      "text": "        content = message.get(\"content\", \"\")"
+    },
+    {
+      "number": 64,
+      "text": "        if role == \"system\":"
+    },
+    {
+      "number": 65,
+      "text": "            if isinstance(content, str):"
+    },
+    {
+      "number": 66,
+      "text": "                if content:"
+    },
+    {
+      "number": 67,
+      "text": "                    system_chunks.append(content)"
+    },
+    {
+      "number": 68,
+      "text": "            else:"
+    },
+    {
+      "number": 69,
+      "text": "                for part in content:"
+    },
+    {
+      "number": 70,
+      "text": "                    if isinstance(part, dict) and part.get(\"type\") != \"input_image\":"
+    },
+    {
+      "number": 71,
+      "text": "                        text = part.get(\"text\", \"\")"
+    },
+    {
+      "number": 72,
+      "text": "                        if text:"
+    },
+    {
+      "number": 73,
+      "text": "                            system_chunks.append(text)"
+    },
+    {
+      "number": 74,
+      "text": "            continue"
+    },
+    {
+      "number": 75,
+      "text": ""
+    },
+    {
+      "number": 76,
+      "text": "        if isinstance(content, str):"
+    },
+    {
+      "number": 77,
+      "text": "            serialized.append({\"role\": role, \"content\": content})"
+    },
+    {
+      "number": 78,
+      "text": "            continue"
+    },
+    {
+      "number": 79,
+      "text": "        parts = [_serialize_anthropic_content_part(p) for p in content if isinstance(p, dict)]"
+    },
+    {
+      "number": 80,
+      "text": "        if parts and all(p.get(\"type\") == \"text\" for p in parts):"
+    },
+    {
+      "number": 81,
+      "text": "            serialized.append({\"role\": role, \"content\": \"\\n\".join(p[\"text\"] for p in parts)})"
+    },
+    {
+      "number": 82,
+      "text": "        else:"
+    },
+    {
+      "number": 83,
+      "text": "            serialized.append({\"role\": role, \"content\": parts})"
+    },
+    {
+      "number": 84,
+      "text": ""
+    },
+    {
+      "number": 85,
+      "text": "    system_prompt = \"\\n\\n\".join(system_chunks) if system_chunks else None"
+    },
+    {
+      "number": 86,
+      "text": "    return system_prompt, serialized"
+    },
+    {
+      "number": 87,
+      "text": ""
+    },
+    {
+      "number": 88,
+      "text": ""
+    },
+    {
+      "number": 89,
+      "text": "def _extract_anthropic_text(payload: dict[str, Any]) -> str:"
+    },
+    {
+      "number": 90,
+      "text": "    texts: list[str] = []"
+    },
+    {
+      "number": 91,
+      "text": "    for block in payload.get(\"content\") or []:"
+    },
+    {
+      "number": 92,
+      "text": "        if isinstance(block, dict) and block.get(\"type\") == \"text\":"
+    },
+    {
+      "number": 93,
+      "text": "            text = block.get(\"text\", \"\")"
+    },
+    {
+      "number": 94,
+      "text": "            if text:"
+    },
+    {
+      "number": 95,
+      "text": "                texts.append(text)"
+    },
+    {
+      "number": 96,
+      "text": "    return \"\\n\".join(texts)"
+    },
+    {
+      "number": 97,
+      "text": ""
+    },
+    {
+      "number": 98,
+      "text": ""
+    },
+    {
+      "number": 99,
+      "text": "def _usage_from_anthropic_payload(payload: dict[str, Any]) -> dict[str, int]:"
+    },
+    {
+      "number": 100,
+      "text": "    usage = payload.get(\"usage\") or {}"
+    },
+    {
+      "number": 101,
+      "text": "    input_tokens = _safe_int(usage.get(\"input_tokens\"))"
+    },
+    {
+      "number": 102,
+      "text": "    output_tokens = _safe_int(usage.get(\"output_tokens\"))"
+    },
+    {
+      "number": 103,
+      "text": "    cached_input_tokens = _safe_int(usage.get(\"cache_read_input_tokens\"))"
+    },
+    {
+      "number": 104,
+      "text": "    return {"
+    },
+    {
+      "number": 105,
+      "text": "        \"input_tokens\": input_tokens,"
+    },
+    {
+      "number": 106,
+      "text": "        \"output_tokens\": output_tokens,"
+    },
+    {
+      "number": 107,
+      "text": "        \"total_tokens\": input_tokens + output_tokens,"
+    },
+    {
+      "number": 108,
+      "text": "        \"cached_input_tokens\": cached_input_tokens,"
+    },
+    {
+      "number": 109,
+      "text": "        \"reasoning_output_tokens\": 0,"
+    },
+    {
+      "number": 110,
+      "text": "    }"
+    },
+    {
+      "number": 111,
+      "text": ""
+    },
+    {
+      "number": 112,
+      "text": ""
+    },
+    {
+      "number": 113,
+      "text": "def _metrics_input_from_anthropic("
+    },
+    {
+      "number": 114,
+      "text": "    system_prompt: str | None, anthropic_messages: list[dict[str, Any]]"
+    },
+    {
+      "number": 115,
+      "text": ") -> list[dict[str, Any]]:"
+    },
+    {
+      "number": 116,
+      "text": "    items: list[dict[str, Any]] = []"
+    },
+    {
+      "number": 117,
+      "text": "    if system_prompt:"
+    },
+    {
+      "number": 118,
+      "text": "        items.append({\"content\": [{\"type\": \"input_text\", \"text\": system_prompt}]})"
+    },
+    {
+      "number": 119,
+      "text": "    for msg in anthropic_messages:"
+    },
+    {
+      "number": 120,
+      "text": "        content = msg.get(\"content\", \"\")"
+    },
+    {
+      "number": 121,
+      "text": "        if isinstance(content, str):"
+    },
+    {
+      "number": 122,
+      "text": "            items.append({\"content\": [{\"type\": \"input_text\", \"text\": content}]})"
+    },
+    {
+      "number": 123,
+      "text": "            continue"
+    },
+    {
+      "number": 124,
+      "text": "        parts: list[dict[str, Any]] = []"
+    },
+    {
+      "number": 125,
+      "text": "        for part in content:"
+    },
+    {
+      "number": 126,
+      "text": "            if not isinstance(part, dict):"
+    },
+    {
+      "number": 127,
+      "text": "                continue"
+    },
+    {
+      "number": 128,
+      "text": "            if part.get(\"type\") == \"text\":"
+    },
+    {
+      "number": 129,
+      "text": "                parts.append({\"type\": \"input_text\", \"text\": part.get(\"text\", \"\")})"
+    },
+    {
+      "number": 130,
+      "text": "            elif part.get(\"type\") == \"image\":"
+    },
+    {
+      "number": 131,
+      "text": "                parts.append({\"type\": \"input_image\"})"
+    },
+    {
+      "number": 132,
+      "text": "        items.append({\"content\": parts})"
+    },
+    {
+      "number": 133,
+      "text": "    return items"
+    },
+    {
+      "number": 134,
+      "text": ""
+    },
+    {
+      "number": 135,
+      "text": ""
+    },
+    {
+      "number": 136,
+      "text": "class AnthropicModelConfig(BaseModelConfig):"
+    },
+    {
+      "number": 137,
+      "text": "    model_name: OptStr = \"claude-opus-4-7\""
+    },
+    {
+      "number": 138,
+      "text": "    anthropic_api_key: OptStr = \"\""
+    },
+    {
+      "number": 139,
+      "text": "    anthropic_endpoint: OptStr = \"https://api.anthropic.com/v1/messages\""
+    },
+    {
+      "number": 140,
+      "text": "    anthropic_version: OptStr = \"2023-06-01\""
+    },
+    {
+      "number": 141,
+      "text": "    max_output_tokens: int = 8000"
+    },
+    {
+      "number": 142,
+      "text": ""
+    },
+    {
+      "number": 143,
+      "text": ""
+    },
+    {
+      "number": 144,
+      "text": "class AnthropicModel(BaseModel):"
+    },
+    {
+      "number": 145,
+      "text": "    _API_KEY_FIELD = \"anthropic_api_key\""
+    },
+    {
+      "number": 146,
+      "text": "    _ENV_VAR = \"ANTHROPIC_API_KEY\""
+    },
+    {
+      "number": 147,
+      "text": "    _LOG_SOURCE = \"anthropic\""
+    },
+    {
+      "number": 148,
+      "text": "    _MAX_RATE_LIMIT_RETRIES = MAX_RATE_LIMIT_RETRIES"
+    },
+    {
+      "number": 149,
+      "text": "    _MAX_TRANSIENT_RETRIES = MAX_TRANSIENT_GATEWAY_RETRIES"
+    },
+    {
+      "number": 150,
+      "text": "    _DEFAULT_CONFIG_CLASS = AnthropicModelConfig"
+    },
+    {
+      "number": 151,
+      "text": ""
+    },
+    {
+      "number": 152,
+      "text": "    def _request_headers(self) -> dict[str, str]:"
+    },
+    {
+      "number": 153,
+      "text": "        return {"
+    },
+    {
+      "number": 154,
+      "text": "            \"Content-Type\": \"application/json\","
+    },
+    {
+      "number": 155,
+      "text": "            \"x-api-key\": self.config.anthropic_api_key,"
+    },
+    {
+      "number": 156,
+      "text": "            \"anthropic-version\": self.config.anthropic_version,"
+    },
+    {
+      "number": 157,
+      "text": "        }"
+    },
+    {
+      "number": 158,
+      "text": ""
+    },
+    {
+      "number": 159,
+      "text": "    def _post_url(self) -> str:"
+    },
+    {
+      "number": 160,
+      "text": "        return self.config.anthropic_endpoint"
+    },
+    {
+      "number": 161,
+      "text": ""
+    },
+    {
+      "number": 162,
+      "text": "    async def _rate_limit_backoff(self, attempt: int, exc: BaseException) -> None:"
+    },
+    {
+      "number": 163,
+      "text": "        delay = random.uniform(RATE_LIMIT_BACKOFF_MIN_SECONDS, RATE_LIMIT_BACKOFF_MAX_SECONDS)"
+    },
+    {
+      "number": 164,
+      "text": "        retry_after = _retry_after_seconds(exc)"
+    },
+    {
+      "number": 165,
+      "text": "        if retry_after is not None and retry_after > delay:"
+    },
+    {
+      "number": 166,
+      "text": "            delay = min(retry_after, RATE_LIMIT_BACKOFF_MAX_SECONDS * 2)"
+    },
+    {
+      "number": 167,
+      "text": "        await asyncio.sleep(delay)"
+    },
+    {
+      "number": 168,
+      "text": ""
+    },
+    {
+      "number": 169,
+      "text": "    async def _transient_backoff(self, attempt: int, exc: BaseException) -> None:"
+    },
+    {
+      "number": 170,
+      "text": "        await asyncio.sleep("
+    },
+    {
+      "number": 171,
+      "text": "            min(TRANSIENT_BACKOFF_BASE_SECONDS * (2 ** attempt), TRANSIENT_BACKOFF_CAP_SECONDS)"
+    },
+    {
+      "number": 172,
+      "text": "        )"
+    },
+    {
+      "number": 173,
+      "text": ""
+    },
+    {
+      "number": 174,
+      "text": "    def _build_payload(self, messages: list[dict[str, Any]]) -> dict[str, Any]:"
+    },
+    {
+      "number": 175,
+      "text": "        system_prompt, anth_messages = _serialize_anthropic_messages(messages)"
+    },
+    {
+      "number": 176,
+      "text": "        payload: dict[str, Any] = {"
+    },
+    {
+      "number": 177,
+      "text": "            \"model\": self.config.model_name,"
+    },
+    {
+      "number": 178,
+      "text": "            \"messages\": anth_messages,"
+    },
+    {
+      "number": 179,
+      "text": "            \"max_tokens\": self.config.max_output_tokens,"
+    },
+    {
+      "number": 180,
+      "text": "        }"
+    },
+    {
+      "number": 181,
+      "text": "        if system_prompt:"
+    },
+    {
+      "number": 182,
+      "text": "            payload[\"system\"] = system_prompt"
+    },
+    {
+      "number": 183,
+      "text": "        return payload"
+    },
+    {
+      "number": 184,
+      "text": ""
+    },
+    {
+      "number": 185,
+      "text": "    def _request_metrics_input(self, payload: dict[str, Any]) -> list[dict[str, Any]]:"
+    },
+    {
+      "number": 186,
+      "text": "        return _metrics_input_from_anthropic(payload.get(\"system\"), payload.get(\"messages\") or [])"
+    },
+    {
+      "number": 187,
+      "text": ""
+    },
+    {
+      "number": 188,
+      "text": "    def _extract_text(self, payload: dict[str, Any]) -> str:"
+    },
+    {
+      "number": 189,
+      "text": "        return _extract_anthropic_text(payload)"
+    },
+    {
+      "number": 190,
+      "text": ""
+    },
+    {
+      "number": 191,
+      "text": "    def _usage_metrics_from_payload(self, payload: dict[str, Any]) -> dict[str, int]:"
+    },
+    {
+      "number": 192,
+      "text": "        return _usage_from_anthropic_payload(payload)"
+    }
+  ],
+  "error": null
+}

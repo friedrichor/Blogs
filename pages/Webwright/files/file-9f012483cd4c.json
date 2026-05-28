@@ -1,0 +1,2452 @@
+{
+  "id": "file-9f012483cd4c",
+  "path": "src/webwright/tools/self_reflection.py",
+  "language": "python",
+  "lines": [
+    {
+      "number": 1,
+      "text": "\"\"\"Self-reflection two-stage screenshot judge CLI."
+    },
+    {
+      "number": 2,
+      "text": ""
+    },
+    {
+      "number": 3,
+      "text": "Previously named ``two_stage_judge``; renamed to ``self_reflection``."
+    },
+    {
+      "number": 4,
+      "text": ""
+    },
+    {
+      "number": 5,
+      "text": "Stage 1: for each screenshot, send a (system, user + image) pair to the"
+    },
+    {
+      "number": 6,
+      "text": "configured model and parse a 1-5 ``Score`` with a short ``Reasoning``."
+    },
+    {
+      "number": 7,
+      "text": ""
+    },
+    {
+      "number": 8,
+      "text": "Stage 2: drop every per-image ``Reasoning`` into the caller-provided final"
+    },
+    {
+      "number": 9,
+      "text": "user prompt template (via ``{image_reasonings}``), attach EVERY screenshot,"
+    },
+    {
+      "number": 10,
+      "text": "and make one final call that must end with ``Status: success`` or"
+    },
+    {
+      "number": 11,
+      "text": "``Status: failure``."
+    },
+    {
+      "number": 12,
+      "text": ""
+    },
+    {
+      "number": 13,
+      "text": "The CLI reads all of its config from a single JSON file so the agent can"
+    },
+    {
+      "number": 14,
+      "text": "prepare it in one turn and invoke the tool in the next."
+    },
+    {
+      "number": 15,
+      "text": ""
+    },
+    {
+      "number": 16,
+      "text": "Usage::"
+    },
+    {
+      "number": 17,
+      "text": ""
+    },
+    {
+      "number": 18,
+      "text": "    python -m webwright.tools.self_reflection --config self_reflect_config.json"
+    },
+    {
+      "number": 19,
+      "text": ""
+    },
+    {
+      "number": 20,
+      "text": "JSON schema (paths relative to ``--workspace-dir`` or the CWD)::"
+    },
+    {
+      "number": 21,
+      "text": ""
+    },
+    {
+      "number": 22,
+      "text": "    {"
+    },
+    {
+      "number": 23,
+      "text": "      \"images\": [\"final_runs/run_001/screenshots/final_execution_1.png\", ...],"
+    },
+    {
+      "number": 24,
+      "text": "      \"image_judge_system_prompt\":     \"...\","
+    },
+    {
+      "number": 25,
+      "text": "      \"image_judge_user_prompt\":       \"...\",           // sent verbatim with each image"
+    },
+    {
+      "number": 26,
+      "text": "            \"final_verdict_system_prompt\":   \"...\","
+    },
+    {
+      "number": 27,
+      "text": "            \"final_verdict_user_prompt\":     \"...{action_history_log}...{image_reasonings}...\""
+    },
+    {
+      "number": 28,
+      "text": "    }"
+    },
+    {
+      "number": 29,
+      "text": ""
+    },
+    {
+      "number": 30,
+      "text": "Any of the four prompt fields may instead be supplied via"
+    },
+    {
+      "number": 31,
+      "text": "``<field>_file`` variants pointing to a text file on disk (recommended when"
+    },
+    {
+      "number": 32,
+      "text": "prompts contain many literal braces or newlines)."
+    },
+    {
+      "number": 33,
+      "text": ""
+    },
+    {
+      "number": 34,
+      "text": "The output JSON written to ``--output`` (or stdout) contains the per-image"
+    },
+    {
+      "number": 35,
+      "text": "records, the image path list, the final response, and"
+    },
+    {
+      "number": 36,
+      "text": "``predicted_label`` (``1`` for success, ``0`` for failure, ``null`` if the"
+    },
+    {
+      "number": 37,
+      "text": "``Status:`` line could not be parsed). Exit code: 0 if PASS, 1 otherwise."
+    },
+    {
+      "number": 38,
+      "text": "\"\"\""
+    },
+    {
+      "number": 39,
+      "text": ""
+    },
+    {
+      "number": 40,
+      "text": "from __future__ import annotations"
+    },
+    {
+      "number": 41,
+      "text": ""
+    },
+    {
+      "number": 42,
+      "text": "import argparse"
+    },
+    {
+      "number": 43,
+      "text": "import asyncio"
+    },
+    {
+      "number": 44,
+      "text": "import base64"
+    },
+    {
+      "number": 45,
+      "text": "import json"
+    },
+    {
+      "number": 46,
+      "text": "import mimetypes"
+    },
+    {
+      "number": 47,
+      "text": "import re"
+    },
+    {
+      "number": 48,
+      "text": "import sys"
+    },
+    {
+      "number": 49,
+      "text": "from dataclasses import dataclass"
+    },
+    {
+      "number": 50,
+      "text": "from pathlib import Path"
+    },
+    {
+      "number": 51,
+      "text": "from typing import Any"
+    },
+    {
+      "number": 52,
+      "text": ""
+    },
+    {
+      "number": 53,
+      "text": "from webwright.models.base import text_part"
+    },
+    {
+      "number": 54,
+      "text": "from webwright.tools._model_config import load_tool_model"
+    },
+    {
+      "number": 55,
+      "text": ""
+    },
+    {
+      "number": 56,
+      "text": "DEFAULT_IMAGE_PARSE_MAX_RETRIES = 3"
+    },
+    {
+      "number": 57,
+      "text": ""
+    },
+    {
+      "number": 58,
+      "text": "_PROMPT_FIELDS = ("
+    },
+    {
+      "number": 59,
+      "text": "    (\"image_judge_system_prompt\", True),"
+    },
+    {
+      "number": 60,
+      "text": "    (\"image_judge_user_prompt\", True),"
+    },
+    {
+      "number": 61,
+      "text": "    (\"final_verdict_system_prompt\", True),"
+    },
+    {
+      "number": 62,
+      "text": "    (\"final_verdict_user_prompt\", True),"
+    },
+    {
+      "number": 63,
+      "text": ")"
+    },
+    {
+      "number": 64,
+      "text": ""
+    },
+    {
+      "number": 65,
+      "text": "_IMAGE_SUFFIXES = frozenset({\".png\", \".jpg\", \".jpeg\", \".webp\"})"
+    },
+    {
+      "number": 66,
+      "text": ""
+    },
+    {
+      "number": 67,
+      "text": ""
+    },
+    {
+      "number": 68,
+      "text": "# ---------------------------------------------------------------------------"
+    },
+    {
+      "number": 69,
+      "text": "# Image helpers"
+    },
+    {
+      "number": 70,
+      "text": "# ---------------------------------------------------------------------------"
+    },
+    {
+      "number": 71,
+      "text": ""
+    },
+    {
+      "number": 72,
+      "text": "def _resolve_image_path(image_path: str, workspace_dir: str = \"\") -> Path:"
+    },
+    {
+      "number": 73,
+      "text": "    path = Path(image_path)"
+    },
+    {
+      "number": 74,
+      "text": "    if not path.is_absolute():"
+    },
+    {
+      "number": 75,
+      "text": "        base_dir = Path(workspace_dir) if workspace_dir else Path.cwd()"
+    },
+    {
+      "number": 76,
+      "text": "        path = base_dir / path"
+    },
+    {
+      "number": 77,
+      "text": "    path = path.resolve()"
+    },
+    {
+      "number": 78,
+      "text": "    if not path.exists():"
+    },
+    {
+      "number": 79,
+      "text": "        raise FileNotFoundError(f\"Image path does not exist: {path}\")"
+    },
+    {
+      "number": 80,
+      "text": "    return path"
+    },
+    {
+      "number": 81,
+      "text": ""
+    },
+    {
+      "number": 82,
+      "text": ""
+    },
+    {
+      "number": 83,
+      "text": "def _final_execution_sort_key(name: str) -> tuple[int, str]:"
+    },
+    {
+      "number": 84,
+      "text": "    match = re.match(r\"final_execution_(\\d+)_\", name)"
+    },
+    {
+      "number": 85,
+      "text": "    if match:"
+    },
+    {
+      "number": 86,
+      "text": "        return (int(match.group(1)), name)"
+    },
+    {
+      "number": 87,
+      "text": "    nums = re.findall(r\"\\d+\", name)"
+    },
+    {
+      "number": 88,
+      "text": "    return (int(nums[0]) if nums else 0, name)"
+    },
+    {
+      "number": 89,
+      "text": ""
+    },
+    {
+      "number": 90,
+      "text": ""
+    },
+    {
+      "number": 91,
+      "text": "def _run_id_sort_key(name: str) -> tuple[int, str]:"
+    },
+    {
+      "number": 92,
+      "text": "    match = re.search(r\"run_(\\d+)\", name)"
+    },
+    {
+      "number": 93,
+      "text": "    if match:"
+    },
+    {
+      "number": 94,
+      "text": "        return (int(match.group(1)), name)"
+    },
+    {
+      "number": 95,
+      "text": "    return (0, name)"
+    },
+    {
+      "number": 96,
+      "text": ""
+    },
+    {
+      "number": 97,
+      "text": ""
+    },
+    {
+      "number": 98,
+      "text": "def _sorted_image_paths(image_dir: Path) -> list[Path]:"
+    },
+    {
+      "number": 99,
+      "text": "    if not image_dir.is_dir():"
+    },
+    {
+      "number": 100,
+      "text": "        return []"
+    },
+    {
+      "number": 101,
+      "text": "    return sorted("
+    },
+    {
+      "number": 102,
+      "text": "        [path for path in image_dir.iterdir() if path.is_file() and path.suffix.lower() in _IMAGE_SUFFIXES],"
+    },
+    {
+      "number": 103,
+      "text": "        key=lambda path: _final_execution_sort_key(path.name),"
+    },
+    {
+      "number": 104,
+      "text": "    )"
+    },
+    {
+      "number": 105,
+      "text": ""
+    },
+    {
+      "number": 106,
+      "text": ""
+    },
+    {
+      "number": 107,
+      "text": "def _discover_latest_run_screenshots("
+    },
+    {
+      "number": 108,
+      "text": "    final_runs_dir: Path,"
+    },
+    {
+      "number": 109,
+      "text": ") -> tuple[Path | None, list[Path]]:"
+    },
+    {
+      "number": 110,
+      "text": "    \"\"\"Find the highest-numbered ``final_runs/run_<id>/screenshots`` dir and its images."
+    },
+    {
+      "number": 111,
+      "text": ""
+    },
+    {
+      "number": 112,
+      "text": "    Returns ``(run_dir_or_None, sorted_image_paths)``. Empty list if no images found."
+    },
+    {
+      "number": 113,
+      "text": "    \"\"\""
+    },
+    {
+      "number": 114,
+      "text": "    if not final_runs_dir.exists() or not final_runs_dir.is_dir():"
+    },
+    {
+      "number": 115,
+      "text": "        return None, []"
+    },
+    {
+      "number": 116,
+      "text": "    candidates = sorted("
+    },
+    {
+      "number": 117,
+      "text": "        (d for d in final_runs_dir.iterdir() if d.is_dir() and re.fullmatch(r\"run_\\d+\", d.name)),"
+    },
+    {
+      "number": 118,
+      "text": "        key=lambda p: _run_id_sort_key(p.name),"
+    },
+    {
+      "number": 119,
+      "text": "    )"
+    },
+    {
+      "number": 120,
+      "text": "    # Walk from highest-numbered run downward and pick the first one with any screenshots."
+    },
+    {
+      "number": 121,
+      "text": "    for run_dir in reversed(candidates):"
+    },
+    {
+      "number": 122,
+      "text": "        screenshots_dir = run_dir / \"screenshots\""
+    },
+    {
+      "number": 123,
+      "text": "        images = _sorted_image_paths(screenshots_dir)"
+    },
+    {
+      "number": 124,
+      "text": "        if images:"
+    },
+    {
+      "number": 125,
+      "text": "            return run_dir, images"
+    },
+    {
+      "number": 126,
+      "text": "    return None, []"
+    },
+    {
+      "number": 127,
+      "text": ""
+    },
+    {
+      "number": 128,
+      "text": ""
+    },
+    {
+      "number": 129,
+      "text": "def _infer_run_dir_from_images(images: list[Path]) -> Path | None:"
+    },
+    {
+      "number": 130,
+      "text": "    run_dirs = {"
+    },
+    {
+      "number": 131,
+      "text": "        path.parent.parent.resolve()"
+    },
+    {
+      "number": 132,
+      "text": "        for path in images"
+    },
+    {
+      "number": 133,
+      "text": "        if path.parent.name == \"screenshots\""
+    },
+    {
+      "number": 134,
+      "text": "    }"
+    },
+    {
+      "number": 135,
+      "text": "    if len(run_dirs) == 1:"
+    },
+    {
+      "number": 136,
+      "text": "        return next(iter(run_dirs))"
+    },
+    {
+      "number": 137,
+      "text": "    return None"
+    },
+    {
+      "number": 138,
+      "text": ""
+    },
+    {
+      "number": 139,
+      "text": ""
+    },
+    {
+      "number": 140,
+      "text": "def _resolve_artifact_dir("
+    },
+    {
+      "number": 141,
+      "text": "    *,"
+    },
+    {
+      "number": 142,
+      "text": "    images: list[Path],"
+    },
+    {
+      "number": 143,
+      "text": "    discovered_run_dir: Path | None,"
+    },
+    {
+      "number": 144,
+      "text": "    output_path: str,"
+    },
+    {
+      "number": 145,
+      "text": "    workspace_dir: str,"
+    },
+    {
+      "number": 146,
+      "text": ") -> Path | None:"
+    },
+    {
+      "number": 147,
+      "text": "    candidates: list[Path] = []"
+    },
+    {
+      "number": 148,
+      "text": ""
+    },
+    {
+      "number": 149,
+      "text": "    inferred_run_dir = _infer_run_dir_from_images(images)"
+    },
+    {
+      "number": 150,
+      "text": "    if inferred_run_dir is not None:"
+    },
+    {
+      "number": 151,
+      "text": "        candidates.append(inferred_run_dir)"
+    },
+    {
+      "number": 152,
+      "text": ""
+    },
+    {
+      "number": 153,
+      "text": "    if discovered_run_dir is not None:"
+    },
+    {
+      "number": 154,
+      "text": "        candidates.append(discovered_run_dir.resolve())"
+    },
+    {
+      "number": 155,
+      "text": ""
+    },
+    {
+      "number": 156,
+      "text": "    if output_path:"
+    },
+    {
+      "number": 157,
+      "text": "        candidates.append(Path(output_path).resolve().parent)"
+    },
+    {
+      "number": 158,
+      "text": ""
+    },
+    {
+      "number": 159,
+      "text": "    base_dir = Path(workspace_dir).resolve() if workspace_dir else Path.cwd().resolve()"
+    },
+    {
+      "number": 160,
+      "text": "    candidates.append(base_dir)"
+    },
+    {
+      "number": 161,
+      "text": ""
+    },
+    {
+      "number": 162,
+      "text": "    seen: set[Path] = set()"
+    },
+    {
+      "number": 163,
+      "text": "    ordered_candidates: list[Path] = []"
+    },
+    {
+      "number": 164,
+      "text": "    for candidate in candidates:"
+    },
+    {
+      "number": 165,
+      "text": "        if candidate in seen:"
+    },
+    {
+      "number": 166,
+      "text": "            continue"
+    },
+    {
+      "number": 167,
+      "text": "        seen.add(candidate)"
+    },
+    {
+      "number": 168,
+      "text": "        ordered_candidates.append(candidate)"
+    },
+    {
+      "number": 169,
+      "text": ""
+    },
+    {
+      "number": 170,
+      "text": "    for candidate in ordered_candidates:"
+    },
+    {
+      "number": 171,
+      "text": "        if (candidate / \"final_script_log.txt\").is_file():"
+    },
+    {
+      "number": 172,
+      "text": "            return candidate"
+    },
+    {
+      "number": 173,
+      "text": ""
+    },
+    {
+      "number": 174,
+      "text": "    return ordered_candidates[0] if ordered_candidates else None"
+    },
+    {
+      "number": 175,
+      "text": ""
+    },
+    {
+      "number": 176,
+      "text": ""
+    },
+    {
+      "number": 177,
+      "text": "def _load_action_history_log(artifact_dir: Path | None) -> str:"
+    },
+    {
+      "number": 178,
+      "text": "    if artifact_dir is None:"
+    },
+    {
+      "number": 179,
+      "text": "        return \"\""
+    },
+    {
+      "number": 180,
+      "text": "    log_path = artifact_dir / \"final_script_log.txt\""
+    },
+    {
+      "number": 181,
+      "text": "    if not log_path.is_file():"
+    },
+    {
+      "number": 182,
+      "text": "        return \"\""
+    },
+    {
+      "number": 183,
+      "text": "    return log_path.read_text(encoding=\"utf-8\").rstrip()"
+    },
+    {
+      "number": 184,
+      "text": ""
+    },
+    {
+      "number": 185,
+      "text": ""
+    },
+    {
+      "number": 186,
+      "text": "def _render_final_verdict_user_prompt("
+    },
+    {
+      "number": 187,
+      "text": "    template: str,"
+    },
+    {
+      "number": 188,
+      "text": "    *,"
+    },
+    {
+      "number": 189,
+      "text": "    image_reasonings: str,"
+    },
+    {
+      "number": 190,
+      "text": "    action_history_log: str,"
+    },
+    {
+      "number": 191,
+      "text": ") -> str:"
+    },
+    {
+      "number": 192,
+      "text": "    rendered = template"
+    },
+    {
+      "number": 193,
+      "text": "    if \"{image_reasonings}\" in template or \"{action_history_log}\" in template:"
+    },
+    {
+      "number": 194,
+      "text": "        try:"
+    },
+    {
+      "number": 195,
+      "text": "            rendered = template.format("
+    },
+    {
+      "number": 196,
+      "text": "                image_reasonings=image_reasonings,"
+    },
+    {
+      "number": 197,
+      "text": "                action_history_log=action_history_log,"
+    },
+    {
+      "number": 198,
+      "text": "            )"
+    },
+    {
+      "number": 199,
+      "text": "        except KeyError as exc:"
+    },
+    {
+      "number": 200,
+      "text": "            raise ValueError("
+    },
+    {
+      "number": 201,
+      "text": "                \"Unknown placeholder in final_verdict_user_prompt: \""
+    },
+    {
+      "number": 202,
+      "text": "                f\"{exc.args[0]!r}. Supported placeholders are \""
+    },
+    {
+      "number": 203,
+      "text": "                \"{image_reasonings} and {action_history_log}; double any literal \""
+    },
+    {
+      "number": 204,
+      "text": "                \"braces as {{ and }}.\""
+    },
+    {
+      "number": 205,
+      "text": "            ) from exc"
+    },
+    {
+      "number": 206,
+      "text": "    return rendered"
+    },
+    {
+      "number": 207,
+      "text": ""
+    },
+    {
+      "number": 208,
+      "text": ""
+    },
+    {
+      "number": 209,
+      "text": "def _high_detail_image_part_from_path(image_path: Path) -> dict[str, Any]:"
+    },
+    {
+      "number": 210,
+      "text": "    mime_type, _ = mimetypes.guess_type(str(image_path))"
+    },
+    {
+      "number": 211,
+      "text": "    encoded = base64.b64encode(image_path.read_bytes()).decode(\"ascii\")"
+    },
+    {
+      "number": 212,
+      "text": "    return {"
+    },
+    {
+      "number": 213,
+      "text": "        \"type\": \"input_image\","
+    },
+    {
+      "number": 214,
+      "text": "        \"image_url\": f\"data:{mime_type or 'image/png'};base64,{encoded}\","
+    },
+    {
+      "number": 215,
+      "text": "        \"detail\": \"high\","
+    },
+    {
+      "number": 216,
+      "text": "    }"
+    },
+    {
+      "number": 217,
+      "text": ""
+    },
+    {
+      "number": 218,
+      "text": ""
+    },
+    {
+      "number": 219,
+      "text": "# ---------------------------------------------------------------------------"
+    },
+    {
+      "number": 220,
+      "text": "# Model call: plain message list -> text"
+    },
+    {
+      "number": 221,
+      "text": "# ---------------------------------------------------------------------------"
+    },
+    {
+      "number": 222,
+      "text": ""
+    },
+    {
+      "number": 223,
+      "text": "def _call_model("
+    },
+    {
+      "number": 224,
+      "text": "    *,"
+    },
+    {
+      "number": 225,
+      "text": "    model_client: Any,"
+    },
+    {
+      "number": 226,
+      "text": "    system_prompt: str,"
+    },
+    {
+      "number": 227,
+      "text": "    user_content: list[dict[str, Any]],"
+    },
+    {
+      "number": 228,
+      "text": "    max_new_tokens: int,"
+    },
+    {
+      "number": 229,
+      "text": ") -> str:"
+    },
+    {
+      "number": 230,
+      "text": "    return model_client("
+    },
+    {
+      "number": 231,
+      "text": "        ["
+    },
+    {
+      "number": 232,
+      "text": "            {\"role\": \"system\", \"content\": system_prompt},"
+    },
+    {
+      "number": 233,
+      "text": "            {\"role\": \"user\", \"content\": user_content},"
+    },
+    {
+      "number": 234,
+      "text": "        ],"
+    },
+    {
+      "number": 235,
+      "text": "        max_output_tokens=max_new_tokens,"
+    },
+    {
+      "number": 236,
+      "text": "    ).strip()"
+    },
+    {
+      "number": 237,
+      "text": ""
+    },
+    {
+      "number": 238,
+      "text": ""
+    },
+    {
+      "number": 239,
+      "text": "def _model_endpoint(model_client: Any) -> str:"
+    },
+    {
+      "number": 240,
+      "text": "    config = getattr(model_client, \"config\", None)"
+    },
+    {
+      "number": 241,
+      "text": "    for key in (\"openai_endpoint\", \"anthropic_endpoint\", \"openrouter_endpoint\"):"
+    },
+    {
+      "number": 242,
+      "text": "        value = getattr(config, key, \"\")"
+    },
+    {
+      "number": 243,
+      "text": "        if value:"
+    },
+    {
+      "number": 244,
+      "text": "            return str(value)"
+    },
+    {
+      "number": 245,
+      "text": "    return \"\""
+    },
+    {
+      "number": 246,
+      "text": ""
+    },
+    {
+      "number": 247,
+      "text": ""
+    },
+    {
+      "number": 248,
+      "text": "# ---------------------------------------------------------------------------"
+    },
+    {
+      "number": 249,
+      "text": "# Parsing helpers (ported from webjudge_online_mind2web_sandbox.py)"
+    },
+    {
+      "number": 250,
+      "text": "# ---------------------------------------------------------------------------"
+    },
+    {
+      "number": 251,
+      "text": ""
+    },
+    {
+      "number": 252,
+      "text": "def _parse_image_judge_response(response: str) -> tuple[str, int]:"
+    },
+    {
+      "number": 253,
+      "text": "    score_match = re.search(r\"(?is)\\bscore\\b[^1-5]*([1-5])\\b\", response)"
+    },
+    {
+      "number": 254,
+      "text": "    reasoning_match = re.search("
+    },
+    {
+      "number": 255,
+      "text": "        r\"(?is)(?:\\*\\*?\\s*reasoning\\s*\\*\\*?|reasoning)\\s*[:\\-]\\s*\""
+    },
+    {
+      "number": 256,
+      "text": "        r\"(.*?)(?=\\n\\s*(?:\\d+\\.\\s*)?(?:\\*\\*?\\s*score\\s*\\*\\*?|score)\\s*[:\\-]|\\Z)\","
+    },
+    {
+      "number": 257,
+      "text": "        response,"
+    },
+    {
+      "number": 258,
+      "text": "    )"
+    },
+    {
+      "number": 259,
+      "text": ""
+    },
+    {
+      "number": 260,
+      "text": "    if score_match and reasoning_match:"
+    },
+    {
+      "number": 261,
+      "text": "        reasoning = re.sub(r\"\\s+\", \" \", reasoning_match.group(1)).strip()"
+    },
+    {
+      "number": 262,
+      "text": "        return reasoning, int(score_match.group(1))"
+    },
+    {
+      "number": 263,
+      "text": ""
+    },
+    {
+      "number": 264,
+      "text": "    try:"
+    },
+    {
+      "number": 265,
+      "text": "        payload = json.loads(response)"
+    },
+    {
+      "number": 266,
+      "text": "    except Exception:"
+    },
+    {
+      "number": 267,
+      "text": "        payload = None"
+    },
+    {
+      "number": 268,
+      "text": ""
+    },
+    {
+      "number": 269,
+      "text": "    if isinstance(payload, dict):"
+    },
+    {
+      "number": 270,
+      "text": "        score = payload.get(\"Score\", payload.get(\"score\"))"
+    },
+    {
+      "number": 271,
+      "text": "        reasoning = payload.get(\"Reasoning\", payload.get(\"reasoning\"))"
+    },
+    {
+      "number": 272,
+      "text": "        if ("
+    },
+    {
+      "number": 273,
+      "text": "            isinstance(score, int)"
+    },
+    {
+      "number": 274,
+      "text": "            and 1 <= score <= 5"
+    },
+    {
+      "number": 275,
+      "text": "            and isinstance(reasoning, str)"
+    },
+    {
+      "number": 276,
+      "text": "            and reasoning.strip()"
+    },
+    {
+      "number": 277,
+      "text": "        ):"
+    },
+    {
+      "number": 278,
+      "text": "            return re.sub(r\"\\s+\", \" \", reasoning).strip(), score"
+    },
+    {
+      "number": 279,
+      "text": ""
+    },
+    {
+      "number": 280,
+      "text": "    raise ValueError(\"Could not parse image judge response\")"
+    },
+    {
+      "number": 281,
+      "text": ""
+    },
+    {
+      "number": 282,
+      "text": ""
+    },
+    {
+      "number": 283,
+      "text": "def _parse_final_verdict(response: str) -> int | None:"
+    },
+    {
+      "number": 284,
+      "text": "    matches = list(re.finditer(r\"(?i)status:\\s*\", response))"
+    },
+    {
+      "number": 285,
+      "text": "    if not matches:"
+    },
+    {
+      "number": 286,
+      "text": "        return None"
+    },
+    {
+      "number": 287,
+      "text": "    tail = response[matches[-1].end():].strip()"
+    },
+    {
+      "number": 288,
+      "text": "    m = re.match(r\"\"\"^[\\'\\\"“”‘’\\s]*(success|failure)\\b\"\"\", tail, re.IGNORECASE)"
+    },
+    {
+      "number": 289,
+      "text": "    if not m:"
+    },
+    {
+      "number": 290,
+      "text": "        return None"
+    },
+    {
+      "number": 291,
+      "text": "    return 1 if m.group(1).lower() == \"success\" else 0"
+    },
+    {
+      "number": 292,
+      "text": ""
+    },
+    {
+      "number": 293,
+      "text": ""
+    },
+    {
+      "number": 294,
+      "text": "# ---------------------------------------------------------------------------"
+    },
+    {
+      "number": 295,
+      "text": "# Per-image scoring"
+    },
+    {
+      "number": 296,
+      "text": "# ---------------------------------------------------------------------------"
+    },
+    {
+      "number": 297,
+      "text": ""
+    },
+    {
+      "number": 298,
+      "text": "async def _judge_one_image("
+    },
+    {
+      "number": 299,
+      "text": "    *,"
+    },
+    {
+      "number": 300,
+      "text": "    image_path: Path,"
+    },
+    {
+      "number": 301,
+      "text": "    image_judge_system_prompt: str,"
+    },
+    {
+      "number": 302,
+      "text": "    image_judge_user_prompt: str,"
+    },
+    {
+      "number": 303,
+      "text": "    model_client: Any,"
+    },
+    {
+      "number": 304,
+      "text": "    max_new_tokens: int,"
+    },
+    {
+      "number": 305,
+      "text": "    max_parse_retries: int,"
+    },
+    {
+      "number": 306,
+      "text": ") -> dict[str, Any]:"
+    },
+    {
+      "number": 307,
+      "text": "    user_content = ["
+    },
+    {
+      "number": 308,
+      "text": "        text_part(image_judge_user_prompt),"
+    },
+    {
+      "number": 309,
+      "text": "        _high_detail_image_part_from_path(image_path),"
+    },
+    {
+      "number": 310,
+      "text": "    ]"
+    },
+    {
+      "number": 311,
+      "text": ""
+    },
+    {
+      "number": 312,
+      "text": "    last_response = \"\""
+    },
+    {
+      "number": 313,
+      "text": "    last_error: BaseException | None = None"
+    },
+    {
+      "number": 314,
+      "text": "    for attempt in range(1, max_parse_retries + 1):"
+    },
+    {
+      "number": 315,
+      "text": "        last_response = await asyncio.to_thread("
+    },
+    {
+      "number": 316,
+      "text": "            _call_model,"
+    },
+    {
+      "number": 317,
+      "text": "            model_client=model_client,"
+    },
+    {
+      "number": 318,
+      "text": "            system_prompt=image_judge_system_prompt,"
+    },
+    {
+      "number": 319,
+      "text": "            user_content=user_content,"
+    },
+    {
+      "number": 320,
+      "text": "            max_new_tokens=max_new_tokens,"
+    },
+    {
+      "number": 321,
+      "text": "        )"
+    },
+    {
+      "number": 322,
+      "text": "        try:"
+    },
+    {
+      "number": 323,
+      "text": "            reasoning, score = _parse_image_judge_response(last_response)"
+    },
+    {
+      "number": 324,
+      "text": "            return {"
+    },
+    {
+      "number": 325,
+      "text": "                \"image_path\": str(image_path),"
+    },
+    {
+      "number": 326,
+      "text": "                \"Response\": last_response,"
+    },
+    {
+      "number": 327,
+      "text": "                \"Score\": score,"
+    },
+    {
+      "number": 328,
+      "text": "                \"Reasoning\": reasoning,"
+    },
+    {
+      "number": 329,
+      "text": "                \"Attempts\": attempt,"
+    },
+    {
+      "number": 330,
+      "text": "                \"ParseFailed\": False,"
+    },
+    {
+      "number": 331,
+      "text": "            }"
+    },
+    {
+      "number": 332,
+      "text": "        except Exception as exc:  # noqa: BLE001"
+    },
+    {
+      "number": 333,
+      "text": "            last_error = exc"
+    },
+    {
+      "number": 334,
+      "text": "            print("
+    },
+    {
+      "number": 335,
+      "text": "                f\"[self_reflection] parse attempt {attempt}/{max_parse_retries} failed for \""
+    },
+    {
+      "number": 336,
+      "text": "                f\"{image_path}: {exc}\","
+    },
+    {
+      "number": 337,
+      "text": "                file=sys.stderr,"
+    },
+    {
+      "number": 338,
+      "text": "            )"
+    },
+    {
+      "number": 339,
+      "text": ""
+    },
+    {
+      "number": 340,
+      "text": "    return {"
+    },
+    {
+      "number": 341,
+      "text": "        \"image_path\": str(image_path),"
+    },
+    {
+      "number": 342,
+      "text": "        \"Response\": last_response,"
+    },
+    {
+      "number": 343,
+      "text": "        \"Score\": 0,"
+    },
+    {
+      "number": 344,
+      "text": "        \"Reasoning\": \"\","
+    },
+    {
+      "number": 345,
+      "text": "        \"Attempts\": max_parse_retries,"
+    },
+    {
+      "number": 346,
+      "text": "        \"ParseFailed\": True,"
+    },
+    {
+      "number": 347,
+      "text": "        \"ParseError\": str(last_error) if last_error is not None else \"unknown\","
+    },
+    {
+      "number": 348,
+      "text": "    }"
+    },
+    {
+      "number": 349,
+      "text": ""
+    },
+    {
+      "number": 350,
+      "text": ""
+    },
+    {
+      "number": 351,
+      "text": "# ---------------------------------------------------------------------------"
+    },
+    {
+      "number": 352,
+      "text": "# Orchestrator"
+    },
+    {
+      "number": 353,
+      "text": "# ---------------------------------------------------------------------------"
+    },
+    {
+      "number": 354,
+      "text": ""
+    },
+    {
+      "number": 355,
+      "text": "@dataclass"
+    },
+    {
+      "number": 356,
+      "text": "class SelfReflectionResult:"
+    },
+    {
+      "number": 357,
+      "text": "    image_records: list[dict[str, Any]]"
+    },
+    {
+      "number": 358,
+      "text": "    image_paths: list[str]"
+    },
+    {
+      "number": 359,
+      "text": "    final_user_text: str"
+    },
+    {
+      "number": 360,
+      "text": "    final_system_msg: str"
+    },
+    {
+      "number": 361,
+      "text": "    final_response: str"
+    },
+    {
+      "number": 362,
+      "text": "    predicted_label: int | None  # 1 success, 0 failure, None unparsed"
+    },
+    {
+      "number": 363,
+      "text": "    model: str = \"\""
+    },
+    {
+      "number": 364,
+      "text": "    endpoint: str = \"\""
+    },
+    {
+      "number": 365,
+      "text": ""
+    },
+    {
+      "number": 366,
+      "text": "    def to_dict(self) -> dict[str, Any]:"
+    },
+    {
+      "number": 367,
+      "text": "        return {"
+    },
+    {
+      "number": 368,
+      "text": "            \"model\": self.model,"
+    },
+    {
+      "number": 369,
+      "text": "            \"endpoint\": self.endpoint,"
+    },
+    {
+      "number": 370,
+      "text": "            \"predicted_label\": self.predicted_label,"
+    },
+    {
+      "number": 371,
+      "text": "            \"final_response\": self.final_response,"
+    },
+    {
+      "number": 372,
+      "text": "            \"final_user_text\": self.final_user_text,"
+    },
+    {
+      "number": 373,
+      "text": "            \"final_system_msg\": self.final_system_msg,"
+    },
+    {
+      "number": 374,
+      "text": "            \"image_paths\": self.image_paths,"
+    },
+    {
+      "number": 375,
+      "text": "            \"image_records\": self.image_records,"
+    },
+    {
+      "number": 376,
+      "text": "        }"
+    },
+    {
+      "number": 377,
+      "text": ""
+    },
+    {
+      "number": 378,
+      "text": ""
+    },
+    {
+      "number": 379,
+      "text": "async def run_self_reflection_async("
+    },
+    {
+      "number": 380,
+      "text": "    *,"
+    },
+    {
+      "number": 381,
+      "text": "    images: list[Path],"
+    },
+    {
+      "number": 382,
+      "text": "    image_judge_system_prompt: str,"
+    },
+    {
+      "number": 383,
+      "text": "    image_judge_user_prompt: str,"
+    },
+    {
+      "number": 384,
+      "text": "    final_verdict_system_prompt: str,"
+    },
+    {
+      "number": 385,
+      "text": "    final_verdict_user_prompt: str,"
+    },
+    {
+      "number": 386,
+      "text": "    action_history_log: str,"
+    },
+    {
+      "number": 387,
+      "text": "    max_image_parse_retries: int,"
+    },
+    {
+      "number": 388,
+      "text": "    final_max_new_tokens: int,"
+    },
+    {
+      "number": 389,
+      "text": "    image_max_new_tokens: int,"
+    },
+    {
+      "number": 390,
+      "text": "    model_client: Any,"
+    },
+    {
+      "number": 391,
+      "text": ") -> SelfReflectionResult:"
+    },
+    {
+      "number": 392,
+      "text": "    model_name = str(getattr(model_client.config, \"model_name\", \"\"))"
+    },
+    {
+      "number": 393,
+      "text": "    endpoint = _model_endpoint(model_client)"
+    },
+    {
+      "number": 394,
+      "text": ""
+    },
+    {
+      "number": 395,
+      "text": "    if images:"
+    },
+    {
+      "number": 396,
+      "text": "        per_image = await asyncio.gather("
+    },
+    {
+      "number": 397,
+      "text": "            *("
+    },
+    {
+      "number": 398,
+      "text": "                _judge_one_image("
+    },
+    {
+      "number": 399,
+      "text": "                    image_path=path,"
+    },
+    {
+      "number": 400,
+      "text": "                    image_judge_system_prompt=image_judge_system_prompt,"
+    },
+    {
+      "number": 401,
+      "text": "                    image_judge_user_prompt=image_judge_user_prompt,"
+    },
+    {
+      "number": 402,
+      "text": "                    model_client=model_client,"
+    },
+    {
+      "number": 403,
+      "text": "                    max_new_tokens=image_max_new_tokens,"
+    },
+    {
+      "number": 404,
+      "text": "                    max_parse_retries=max_image_parse_retries,"
+    },
+    {
+      "number": 405,
+      "text": "                )"
+    },
+    {
+      "number": 406,
+      "text": "                for path in images"
+    },
+    {
+      "number": 407,
+      "text": "            )"
+    },
+    {
+      "number": 408,
+      "text": "        )"
+    },
+    {
+      "number": 409,
+      "text": "    else:"
+    },
+    {
+      "number": 410,
+      "text": "        per_image = []"
+    },
+    {
+      "number": 411,
+      "text": ""
+    },
+    {
+      "number": 412,
+      "text": "    image_paths = [record[\"image_path\"] for record in per_image]"
+    },
+    {
+      "number": 413,
+      "text": "    reasonings = [record[\"Reasoning\"] or \"\" for record in per_image]"
+    },
+    {
+      "number": 414,
+      "text": ""
+    },
+    {
+      "number": 415,
+      "text": "    reasonings_block = \"\\n\".join("
+    },
+    {
+      "number": 416,
+      "text": "        f\"{i + 1}. {text}\" for i, text in enumerate(reasonings)"
+    },
+    {
+      "number": 417,
+      "text": "    )"
+    },
+    {
+      "number": 418,
+      "text": ""
+    },
+    {
+      "number": 419,
+      "text": "    final_user_text = _render_final_verdict_user_prompt("
+    },
+    {
+      "number": 420,
+      "text": "        final_verdict_user_prompt,"
+    },
+    {
+      "number": 421,
+      "text": "        image_reasonings=reasonings_block,"
+    },
+    {
+      "number": 422,
+      "text": "        action_history_log=action_history_log,"
+    },
+    {
+      "number": 423,
+      "text": "    )"
+    },
+    {
+      "number": 424,
+      "text": ""
+    },
+    {
+      "number": 425,
+      "text": "    user_content: list[dict[str, Any]] = [text_part(final_user_text)]"
+    },
+    {
+      "number": 426,
+      "text": "    for path_str in image_paths:"
+    },
+    {
+      "number": 427,
+      "text": "        user_content.append(_high_detail_image_part_from_path(Path(path_str)))"
+    },
+    {
+      "number": 428,
+      "text": ""
+    },
+    {
+      "number": 429,
+      "text": "    final_response = await asyncio.to_thread("
+    },
+    {
+      "number": 430,
+      "text": "        _call_model,"
+    },
+    {
+      "number": 431,
+      "text": "        model_client=model_client,"
+    },
+    {
+      "number": 432,
+      "text": "        system_prompt=final_verdict_system_prompt,"
+    },
+    {
+      "number": 433,
+      "text": "        user_content=user_content,"
+    },
+    {
+      "number": 434,
+      "text": "        max_new_tokens=final_max_new_tokens,"
+    },
+    {
+      "number": 435,
+      "text": "    )"
+    },
+    {
+      "number": 436,
+      "text": "    predicted_label = _parse_final_verdict(final_response)"
+    },
+    {
+      "number": 437,
+      "text": ""
+    },
+    {
+      "number": 438,
+      "text": "    return SelfReflectionResult("
+    },
+    {
+      "number": 439,
+      "text": "        image_records=list(per_image),"
+    },
+    {
+      "number": 440,
+      "text": "        image_paths=image_paths,"
+    },
+    {
+      "number": 441,
+      "text": "        final_user_text=final_user_text,"
+    },
+    {
+      "number": 442,
+      "text": "        final_system_msg=final_verdict_system_prompt,"
+    },
+    {
+      "number": 443,
+      "text": "        final_response=final_response,"
+    },
+    {
+      "number": 444,
+      "text": "        predicted_label=predicted_label,"
+    },
+    {
+      "number": 445,
+      "text": "        model=model_name,"
+    },
+    {
+      "number": 446,
+      "text": "        endpoint=endpoint,"
+    },
+    {
+      "number": 447,
+      "text": "    )"
+    },
+    {
+      "number": 448,
+      "text": ""
+    },
+    {
+      "number": 449,
+      "text": ""
+    },
+    {
+      "number": 450,
+      "text": "def run_self_reflection(**kwargs: Any) -> SelfReflectionResult:"
+    },
+    {
+      "number": 451,
+      "text": "    return asyncio.run(run_self_reflection_async(**kwargs))"
+    },
+    {
+      "number": 452,
+      "text": ""
+    },
+    {
+      "number": 453,
+      "text": ""
+    },
+    {
+      "number": 454,
+      "text": "# ---------------------------------------------------------------------------"
+    },
+    {
+      "number": 455,
+      "text": "# CLI"
+    },
+    {
+      "number": 456,
+      "text": "# ---------------------------------------------------------------------------"
+    },
+    {
+      "number": 457,
+      "text": ""
+    },
+    {
+      "number": 458,
+      "text": "def _resolve_prompt(cfg: dict[str, Any], key: str, *, required: bool) -> str | None:"
+    },
+    {
+      "number": 459,
+      "text": "    inline = cfg.get(key)"
+    },
+    {
+      "number": 460,
+      "text": "    file_key = f\"{key}_file\""
+    },
+    {
+      "number": 461,
+      "text": "    file_path = cfg.get(file_key)"
+    },
+    {
+      "number": 462,
+      "text": "    if inline is not None and file_path is not None:"
+    },
+    {
+      "number": 463,
+      "text": "        raise ValueError(f\"Provide only one of {key!r} or {file_key!r}, not both.\")"
+    },
+    {
+      "number": 464,
+      "text": "    if file_path is not None:"
+    },
+    {
+      "number": 465,
+      "text": "        return Path(file_path).read_text(encoding=\"utf-8\")"
+    },
+    {
+      "number": 466,
+      "text": "    if inline is not None:"
+    },
+    {
+      "number": 467,
+      "text": "        return inline"
+    },
+    {
+      "number": 468,
+      "text": "    if required:"
+    },
+    {
+      "number": 469,
+      "text": "        raise ValueError(f\"Missing required prompt: {key} (or {file_key}).\")"
+    },
+    {
+      "number": 470,
+      "text": "    return None"
+    },
+    {
+      "number": 471,
+      "text": ""
+    },
+    {
+      "number": 472,
+      "text": ""
+    },
+    {
+      "number": 473,
+      "text": "def _load_config(config_arg: str) -> dict[str, Any]:"
+    },
+    {
+      "number": 474,
+      "text": "    if config_arg == \"-\":"
+    },
+    {
+      "number": 475,
+      "text": "        return json.loads(sys.stdin.read())"
+    },
+    {
+      "number": 476,
+      "text": "    return json.loads(Path(config_arg).read_text(encoding=\"utf-8\"))"
+    },
+    {
+      "number": 477,
+      "text": ""
+    },
+    {
+      "number": 478,
+      "text": ""
+    },
+    {
+      "number": 479,
+      "text": "def build_parser() -> argparse.ArgumentParser:"
+    },
+    {
+      "number": 480,
+      "text": "    parser = argparse.ArgumentParser("
+    },
+    {
+      "number": 481,
+      "text": "        description=("
+    },
+    {
+      "number": 482,
+      "text": "            \"Two-stage screenshot judge. Reads a JSON config describing images and \""
+    },
+    {
+      "number": 483,
+      "text": "            \"prompts, calls the configured model, and prints a \""
+    },
+    {
+      "number": 484,
+      "text": "            \"JSON result with per-image records and the final verdict.\""
+    },
+    {
+      "number": 485,
+      "text": "        )"
+    },
+    {
+      "number": 486,
+      "text": "    )"
+    },
+    {
+      "number": 487,
+      "text": "    parser.add_argument(\"--config\", required=True, help=\"Path to JSON config, or '-' for stdin.\")"
+    },
+    {
+      "number": 488,
+      "text": "    parser.add_argument(\"--workspace-dir\", default=\"\", help=\"Base directory for relative image paths.\")"
+    },
+    {
+      "number": 489,
+      "text": "    parser.add_argument(\"--output\", default=\"\", help=\"Write JSON result to this path instead of stdout.\")"
+    },
+    {
+      "number": 490,
+      "text": "    parser.add_argument("
+    },
+    {
+      "number": 491,
+      "text": "        \"--auto-latest-run\","
+    },
+    {
+      "number": 492,
+      "text": "        default=\"final_runs\","
+    },
+    {
+      "number": 493,
+      "text": "        help=("
+    },
+    {
+      "number": 494,
+      "text": "            \"When the config has no 'images' list, auto-discover screenshots from the \""
+    },
+    {
+      "number": 495,
+      "text": "            \"highest-numbered `<workspace-dir>/<this-value>/run_<id>/screenshots` folder. \""
+    },
+    {
+      "number": 496,
+      "text": "            \"Default: 'final_runs'. Pass '' (empty string) to disable auto-discovery.\""
+    },
+    {
+      "number": 497,
+      "text": "        ),"
+    },
+    {
+      "number": 498,
+      "text": "    )"
+    },
+    {
+      "number": 499,
+      "text": "    parser.add_argument(\"--max-image-parse-retries\", type=int, default=DEFAULT_IMAGE_PARSE_MAX_RETRIES)"
+    },
+    {
+      "number": 500,
+      "text": "    parser.add_argument(\"--image-max-new-tokens\", type=int, default=1024)"
+    },
+    {
+      "number": 501,
+      "text": "    parser.add_argument(\"--final-max-new-tokens\", type=int, default=8192)"
+    },
+    {
+      "number": 502,
+      "text": "    parser.add_argument("
+    },
+    {
+      "number": 503,
+      "text": "        \"--model-config\","
+    },
+    {
+      "number": 504,
+      "text": "        default=\"\","
+    },
+    {
+      "number": 505,
+      "text": "        help=("
+    },
+    {
+      "number": 506,
+      "text": "            \"Path to a JSON/YAML config containing a top-level `model:` block. \""
+    },
+    {
+      "number": 507,
+      "text": "            \"If omitted, reads <workspace-dir>/config_snapshot/merged_config.yaml.\""
+    },
+    {
+      "number": 508,
+      "text": "        ),"
+    },
+    {
+      "number": 509,
+      "text": "    )"
+    },
+    {
+      "number": 510,
+      "text": "    parser.add_argument(\"--timeout-seconds\", type=int, default=120)"
+    },
+    {
+      "number": 511,
+      "text": "    return parser"
+    },
+    {
+      "number": 512,
+      "text": ""
+    },
+    {
+      "number": 513,
+      "text": ""
+    },
+    {
+      "number": 514,
+      "text": "def main(argv: list[str] | None = None) -> int:"
+    },
+    {
+      "number": 515,
+      "text": "    parser = build_parser()"
+    },
+    {
+      "number": 516,
+      "text": "    args = parser.parse_args(argv)"
+    },
+    {
+      "number": 517,
+      "text": "    base_dir = Path(args.workspace_dir).resolve() if args.workspace_dir else Path.cwd().resolve()"
+    },
+    {
+      "number": 518,
+      "text": ""
+    },
+    {
+      "number": 519,
+      "text": "    cfg = _load_config(args.config)"
+    },
+    {
+      "number": 520,
+      "text": ""
+    },
+    {
+      "number": 521,
+      "text": "    prompts = {"
+    },
+    {
+      "number": 522,
+      "text": "        key: _resolve_prompt(cfg, key, required=required)"
+    },
+    {
+      "number": 523,
+      "text": "        for key, required in _PROMPT_FIELDS"
+    },
+    {
+      "number": 524,
+      "text": "    }"
+    },
+    {
+      "number": 525,
+      "text": ""
+    },
+    {
+      "number": 526,
+      "text": "    images_config = cfg.get(\"images\") or cfg.get(\"images_path\") or []"
+    },
+    {
+      "number": 527,
+      "text": "    resolved_images = ["
+    },
+    {
+      "number": 528,
+      "text": "        _resolve_image_path(p, workspace_dir=args.workspace_dir) for p in images_config"
+    },
+    {
+      "number": 529,
+      "text": "    ]"
+    },
+    {
+      "number": 530,
+      "text": "    discovered_run_dir = _infer_run_dir_from_images(resolved_images)"
+    },
+    {
+      "number": 531,
+      "text": ""
+    },
+    {
+      "number": 532,
+      "text": "    # If config did not provide images, fall back to the latest run's screenshots."
+    },
+    {
+      "number": 533,
+      "text": "    if not resolved_images:"
+    },
+    {
+      "number": 534,
+      "text": "        discovered: list[Path] = []"
+    },
+    {
+      "number": 535,
+      "text": "        discovered_source = \"\""
+    },
+    {
+      "number": 536,
+      "text": "        if args.auto_latest_run:"
+    },
+    {
+      "number": 537,
+      "text": "            auto_root = Path(args.auto_latest_run)"
+    },
+    {
+      "number": 538,
+      "text": "            if not auto_root.is_absolute():"
+    },
+    {
+      "number": 539,
+      "text": "                auto_root = base_dir / auto_root"
+    },
+    {
+      "number": 540,
+      "text": "            auto_root = auto_root.resolve()"
+    },
+    {
+      "number": 541,
+      "text": "            discovered_run_dir, discovered = _discover_latest_run_screenshots(auto_root)"
+    },
+    {
+      "number": 542,
+      "text": "            if discovered_run_dir is not None:"
+    },
+    {
+      "number": 543,
+      "text": "                discovered_source = str(discovered_run_dir / \"screenshots\")"
+    },
+    {
+      "number": 544,
+      "text": "        if discovered:"
+    },
+    {
+      "number": 545,
+      "text": "            resolved_images = discovered"
+    },
+    {
+      "number": 546,
+      "text": "            print("
+    },
+    {
+      "number": 547,
+      "text": "                f\"[self_reflection] auto-discovered {len(resolved_images)} screenshots from {discovered_source}\","
+    },
+    {
+      "number": 548,
+      "text": "                file=sys.stderr,"
+    },
+    {
+      "number": 549,
+      "text": "            )"
+    },
+    {
+      "number": 550,
+      "text": ""
+    },
+    {
+      "number": 551,
+      "text": "    artifact_dir = _resolve_artifact_dir("
+    },
+    {
+      "number": 552,
+      "text": "        images=resolved_images,"
+    },
+    {
+      "number": 553,
+      "text": "        discovered_run_dir=discovered_run_dir,"
+    },
+    {
+      "number": 554,
+      "text": "        output_path=args.output,"
+    },
+    {
+      "number": 555,
+      "text": "        workspace_dir=args.workspace_dir,"
+    },
+    {
+      "number": 556,
+      "text": "    )"
+    },
+    {
+      "number": 557,
+      "text": "    action_history_log = _load_action_history_log(artifact_dir)"
+    },
+    {
+      "number": 558,
+      "text": ""
+    },
+    {
+      "number": 559,
+      "text": "    if not resolved_images:"
+    },
+    {
+      "number": 560,
+      "text": "        print("
+    },
+    {
+      "number": 561,
+      "text": "            \"[self_reflection] warning: no images provided; final stage will run without screenshot attachments.\","
+    },
+    {
+      "number": 562,
+      "text": "            file=sys.stderr,"
+    },
+    {
+      "number": 563,
+      "text": "        )"
+    },
+    {
+      "number": 564,
+      "text": ""
+    },
+    {
+      "number": 565,
+      "text": "    if not action_history_log:"
+    },
+    {
+      "number": 566,
+      "text": "        print("
+    },
+    {
+      "number": 567,
+      "text": "            \"[self_reflection] warning: no final_script_log.txt found; final prompt will omit action history content.\","
+    },
+    {
+      "number": 568,
+      "text": "            file=sys.stderr,"
+    },
+    {
+      "number": 569,
+      "text": "        )"
+    },
+    {
+      "number": 570,
+      "text": ""
+    },
+    {
+      "number": 571,
+      "text": "    model_client = load_tool_model("
+    },
+    {
+      "number": 572,
+      "text": "        model_config_arg=args.model_config,"
+    },
+    {
+      "number": 573,
+      "text": "        workspace_dir=args.workspace_dir,"
+    },
+    {
+      "number": 574,
+      "text": "        timeout_seconds=args.timeout_seconds,"
+    },
+    {
+      "number": 575,
+      "text": "    )"
+    },
+    {
+      "number": 576,
+      "text": ""
+    },
+    {
+      "number": 577,
+      "text": "    result = run_self_reflection("
+    },
+    {
+      "number": 578,
+      "text": "        images=resolved_images,"
+    },
+    {
+      "number": 579,
+      "text": "        image_judge_system_prompt=prompts[\"image_judge_system_prompt\"],"
+    },
+    {
+      "number": 580,
+      "text": "        image_judge_user_prompt=prompts[\"image_judge_user_prompt\"],"
+    },
+    {
+      "number": 581,
+      "text": "        final_verdict_system_prompt=prompts[\"final_verdict_system_prompt\"],"
+    },
+    {
+      "number": 582,
+      "text": "        final_verdict_user_prompt=prompts[\"final_verdict_user_prompt\"],"
+    },
+    {
+      "number": 583,
+      "text": "        action_history_log=action_history_log,"
+    },
+    {
+      "number": 584,
+      "text": "        max_image_parse_retries=args.max_image_parse_retries,"
+    },
+    {
+      "number": 585,
+      "text": "        final_max_new_tokens=args.final_max_new_tokens,"
+    },
+    {
+      "number": 586,
+      "text": "        image_max_new_tokens=args.image_max_new_tokens,"
+    },
+    {
+      "number": 587,
+      "text": "        model_client=model_client,"
+    },
+    {
+      "number": 588,
+      "text": "    )"
+    },
+    {
+      "number": 589,
+      "text": ""
+    },
+    {
+      "number": 590,
+      "text": "    payload = result.to_dict()"
+    },
+    {
+      "number": 591,
+      "text": "    serialized = json.dumps(payload, indent=2, ensure_ascii=False)"
+    },
+    {
+      "number": 592,
+      "text": "    if args.output:"
+    },
+    {
+      "number": 593,
+      "text": "        Path(args.output).write_text(serialized, encoding=\"utf-8\")"
+    },
+    {
+      "number": 594,
+      "text": "        print(f\"Wrote result to {args.output}\", file=sys.stderr)"
+    },
+    {
+      "number": 595,
+      "text": "    else:"
+    },
+    {
+      "number": 596,
+      "text": "        sys.stdout.write(serialized)"
+    },
+    {
+      "number": 597,
+      "text": "        sys.stdout.write(\"\\n\")"
+    },
+    {
+      "number": 598,
+      "text": ""
+    },
+    {
+      "number": 599,
+      "text": "    label = result.predicted_label"
+    },
+    {
+      "number": 600,
+      "text": "    if label == 1:"
+    },
+    {
+      "number": 601,
+      "text": "        print(\"JUDGE VERDICT: PASS\", file=sys.stderr)"
+    },
+    {
+      "number": 602,
+      "text": "        return 0"
+    },
+    {
+      "number": 603,
+      "text": "    if label == 0:"
+    },
+    {
+      "number": 604,
+      "text": "        print(\"JUDGE VERDICT: FAIL\", file=sys.stderr)"
+    },
+    {
+      "number": 605,
+      "text": "        return 1"
+    },
+    {
+      "number": 606,
+      "text": "    print(\"JUDGE VERDICT: UNPARSED (treating as FAIL)\", file=sys.stderr)"
+    },
+    {
+      "number": 607,
+      "text": "    return 1"
+    },
+    {
+      "number": 608,
+      "text": ""
+    },
+    {
+      "number": 609,
+      "text": ""
+    },
+    {
+      "number": 610,
+      "text": "if __name__ == \"__main__\":"
+    },
+    {
+      "number": 611,
+      "text": "    raise SystemExit(main())"
+    }
+  ],
+  "error": null
+}

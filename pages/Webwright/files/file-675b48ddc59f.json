@@ -1,0 +1,832 @@
+{
+  "id": "file-675b48ddc59f",
+  "path": "src/webwright/models/openrouter_model.py",
+  "language": "python",
+  "lines": [
+    {
+      "number": 1,
+      "text": "\"\"\"OpenRouter chat completions model backend.\"\"\""
+    },
+    {
+      "number": 2,
+      "text": ""
+    },
+    {
+      "number": 3,
+      "text": "from __future__ import annotations"
+    },
+    {
+      "number": 4,
+      "text": ""
+    },
+    {
+      "number": 5,
+      "text": "from typing import Any"
+    },
+    {
+      "number": 6,
+      "text": "from urllib.parse import urlparse"
+    },
+    {
+      "number": 7,
+      "text": ""
+    },
+    {
+      "number": 8,
+      "text": "from webwright.models.base import ("
+    },
+    {
+      "number": 9,
+      "text": "    BaseModel,"
+    },
+    {
+      "number": 10,
+      "text": "    BaseModelConfig,"
+    },
+    {
+      "number": 11,
+      "text": "    OptStr,"
+    },
+    {
+      "number": 12,
+      "text": "    _safe_int,"
+    },
+    {
+      "number": 13,
+      "text": ")"
+    },
+    {
+      "number": 14,
+      "text": ""
+    },
+    {
+      "number": 15,
+      "text": "__all__ = ["
+    },
+    {
+      "number": 16,
+      "text": "    \"OpenRouterModel\","
+    },
+    {
+      "number": 17,
+      "text": "    \"OpenRouterModelConfig\","
+    },
+    {
+      "number": 18,
+      "text": "]"
+    },
+    {
+      "number": 19,
+      "text": ""
+    },
+    {
+      "number": 20,
+      "text": ""
+    },
+    {
+      "number": 21,
+      "text": "def _serialize_chat_content_part(part: dict[str, Any]) -> dict[str, Any] | None:"
+    },
+    {
+      "number": 22,
+      "text": "    part_type = part.get(\"type\")"
+    },
+    {
+      "number": 23,
+      "text": "    if part_type in {\"input_text\", \"output_text\"}:"
+    },
+    {
+      "number": 24,
+      "text": "        return {\"type\": \"text\", \"text\": str(part.get(\"text\", \"\") or \"\")}"
+    },
+    {
+      "number": 25,
+      "text": "    if part_type == \"input_image\":"
+    },
+    {
+      "number": 26,
+      "text": "        return {"
+    },
+    {
+      "number": 27,
+      "text": "            \"type\": \"image_url\","
+    },
+    {
+      "number": 28,
+      "text": "            \"image_url\": {"
+    },
+    {
+      "number": 29,
+      "text": "                \"url\": str(part.get(\"image_url\", \"\") or \"\"),"
+    },
+    {
+      "number": 30,
+      "text": "                \"detail\": str(part.get(\"detail\", \"high\") or \"high\"),"
+    },
+    {
+      "number": 31,
+      "text": "            },"
+    },
+    {
+      "number": 32,
+      "text": "        }"
+    },
+    {
+      "number": 33,
+      "text": "    return None"
+    },
+    {
+      "number": 34,
+      "text": ""
+    },
+    {
+      "number": 35,
+      "text": ""
+    },
+    {
+      "number": 36,
+      "text": "def _serialize_chat_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:"
+    },
+    {
+      "number": 37,
+      "text": "    serialized: list[dict[str, Any]] = []"
+    },
+    {
+      "number": 38,
+      "text": "    for message in messages:"
+    },
+    {
+      "number": 39,
+      "text": "        role = message[\"role\"]"
+    },
+    {
+      "number": 40,
+      "text": "        if role == \"exit\":"
+    },
+    {
+      "number": 41,
+      "text": "            continue"
+    },
+    {
+      "number": 42,
+      "text": "        mapped_role = \"system\" if role == \"system\" else (\"assistant\" if role == \"assistant\" else \"user\")"
+    },
+    {
+      "number": 43,
+      "text": "        content = message.get(\"content\", \"\")"
+    },
+    {
+      "number": 44,
+      "text": "        if isinstance(content, str):"
+    },
+    {
+      "number": 45,
+      "text": "            serialized.append({\"role\": mapped_role, \"content\": content})"
+    },
+    {
+      "number": 46,
+      "text": "            continue"
+    },
+    {
+      "number": 47,
+      "text": "        parts = ["
+    },
+    {
+      "number": 48,
+      "text": "            serialized_part"
+    },
+    {
+      "number": 49,
+      "text": "            for part in content"
+    },
+    {
+      "number": 50,
+      "text": "            if isinstance(part, dict)"
+    },
+    {
+      "number": 51,
+      "text": "            for serialized_part in [_serialize_chat_content_part(part)]"
+    },
+    {
+      "number": 52,
+      "text": "            if serialized_part is not None"
+    },
+    {
+      "number": 53,
+      "text": "        ]"
+    },
+    {
+      "number": 54,
+      "text": "        if mapped_role == \"assistant\" or all(part.get(\"type\") == \"text\" for part in parts):"
+    },
+    {
+      "number": 55,
+      "text": "            serialized.append("
+    },
+    {
+      "number": 56,
+      "text": "                {"
+    },
+    {
+      "number": 57,
+      "text": "                    \"role\": mapped_role,"
+    },
+    {
+      "number": 58,
+      "text": "                    \"content\": \"\\n\".join(str(part.get(\"text\", \"\") or \"\") for part in parts),"
+    },
+    {
+      "number": 59,
+      "text": "                }"
+    },
+    {
+      "number": 60,
+      "text": "            )"
+    },
+    {
+      "number": 61,
+      "text": "        else:"
+    },
+    {
+      "number": 62,
+      "text": "            serialized.append({\"role\": mapped_role, \"content\": parts})"
+    },
+    {
+      "number": 63,
+      "text": "    return serialized"
+    },
+    {
+      "number": 64,
+      "text": ""
+    },
+    {
+      "number": 65,
+      "text": ""
+    },
+    {
+      "number": 66,
+      "text": "def _metrics_input_from_chat_messages(chat_messages: list[dict[str, Any]]) -> list[dict[str, Any]]:"
+    },
+    {
+      "number": 67,
+      "text": "    metrics_input: list[dict[str, Any]] = []"
+    },
+    {
+      "number": 68,
+      "text": "    for message in chat_messages:"
+    },
+    {
+      "number": 69,
+      "text": "        content = message.get(\"content\", \"\")"
+    },
+    {
+      "number": 70,
+      "text": "        if isinstance(content, str):"
+    },
+    {
+      "number": 71,
+      "text": "            metrics_input.append({\"content\": [{\"type\": \"input_text\", \"text\": content}]})"
+    },
+    {
+      "number": 72,
+      "text": "            continue"
+    },
+    {
+      "number": 73,
+      "text": "        parts: list[dict[str, Any]] = []"
+    },
+    {
+      "number": 74,
+      "text": "        for part in content:"
+    },
+    {
+      "number": 75,
+      "text": "            if not isinstance(part, dict):"
+    },
+    {
+      "number": 76,
+      "text": "                continue"
+    },
+    {
+      "number": 77,
+      "text": "            if part.get(\"type\") == \"text\":"
+    },
+    {
+      "number": 78,
+      "text": "                parts.append({\"type\": \"input_text\", \"text\": str(part.get(\"text\", \"\") or \"\")})"
+    },
+    {
+      "number": 79,
+      "text": "            elif part.get(\"type\") == \"image_url\":"
+    },
+    {
+      "number": 80,
+      "text": "                parts.append({\"type\": \"input_image\"})"
+    },
+    {
+      "number": 81,
+      "text": "        metrics_input.append({\"content\": parts})"
+    },
+    {
+      "number": 82,
+      "text": "    return metrics_input"
+    },
+    {
+      "number": 83,
+      "text": ""
+    },
+    {
+      "number": 84,
+      "text": ""
+    },
+    {
+      "number": 85,
+      "text": "def _extract_chat_completions_text(payload: dict[str, Any]) -> str:"
+    },
+    {
+      "number": 86,
+      "text": "    choices = payload.get(\"choices\")"
+    },
+    {
+      "number": 87,
+      "text": "    if not isinstance(choices, list) or not choices:"
+    },
+    {
+      "number": 88,
+      "text": "        return \"\""
+    },
+    {
+      "number": 89,
+      "text": "    first_choice = choices[0]"
+    },
+    {
+      "number": 90,
+      "text": "    if not isinstance(first_choice, dict):"
+    },
+    {
+      "number": 91,
+      "text": "        return \"\""
+    },
+    {
+      "number": 92,
+      "text": "    message = first_choice.get(\"message\", {})"
+    },
+    {
+      "number": 93,
+      "text": "    if not isinstance(message, dict):"
+    },
+    {
+      "number": 94,
+      "text": "        return \"\""
+    },
+    {
+      "number": 95,
+      "text": "    content = message.get(\"content\", \"\")"
+    },
+    {
+      "number": 96,
+      "text": "    if isinstance(content, str):"
+    },
+    {
+      "number": 97,
+      "text": "        return content"
+    },
+    {
+      "number": 98,
+      "text": "    if isinstance(content, list):"
+    },
+    {
+      "number": 99,
+      "text": "        return \"\\n\".join("
+    },
+    {
+      "number": 100,
+      "text": "            str(part.get(\"text\", \"\") or \"\")"
+    },
+    {
+      "number": 101,
+      "text": "            for part in content"
+    },
+    {
+      "number": 102,
+      "text": "            if isinstance(part, dict) and part.get(\"type\") == \"text\""
+    },
+    {
+      "number": 103,
+      "text": "        )"
+    },
+    {
+      "number": 104,
+      "text": "    return \"\""
+    },
+    {
+      "number": 105,
+      "text": ""
+    },
+    {
+      "number": 106,
+      "text": ""
+    },
+    {
+      "number": 107,
+      "text": "def _usage_metrics_from_chat_completions(payload: dict[str, Any]) -> dict[str, int]:"
+    },
+    {
+      "number": 108,
+      "text": "    usage = payload.get(\"usage\")"
+    },
+    {
+      "number": 109,
+      "text": "    if not isinstance(usage, dict):"
+    },
+    {
+      "number": 110,
+      "text": "        usage = {}"
+    },
+    {
+      "number": 111,
+      "text": "    return {"
+    },
+    {
+      "number": 112,
+      "text": "        \"input_tokens\": _safe_int(usage.get(\"prompt_tokens\")),"
+    },
+    {
+      "number": 113,
+      "text": "        \"output_tokens\": _safe_int(usage.get(\"completion_tokens\")),"
+    },
+    {
+      "number": 114,
+      "text": "        \"total_tokens\": _safe_int(usage.get(\"total_tokens\")),"
+    },
+    {
+      "number": 115,
+      "text": "        \"cached_input_tokens\": 0,"
+    },
+    {
+      "number": 116,
+      "text": "        \"reasoning_output_tokens\": 0,"
+    },
+    {
+      "number": 117,
+      "text": "    }"
+    },
+    {
+      "number": 118,
+      "text": ""
+    },
+    {
+      "number": 119,
+      "text": ""
+    },
+    {
+      "number": 120,
+      "text": "def _endpoint_host(endpoint: str) -> str:"
+    },
+    {
+      "number": 121,
+      "text": "    return (urlparse(endpoint).hostname or \"\").lower()"
+    },
+    {
+      "number": 122,
+      "text": ""
+    },
+    {
+      "number": 123,
+      "text": ""
+    },
+    {
+      "number": 124,
+      "text": "def _is_openai_endpoint(endpoint: str) -> bool:"
+    },
+    {
+      "number": 125,
+      "text": "    return _endpoint_host(endpoint) == \"api.openai.com\""
+    },
+    {
+      "number": 126,
+      "text": ""
+    },
+    {
+      "number": 127,
+      "text": ""
+    },
+    {
+      "number": 128,
+      "text": "def _is_openrouter_endpoint(endpoint: str) -> bool:"
+    },
+    {
+      "number": 129,
+      "text": "    return _endpoint_host(endpoint).endswith(\"openrouter.ai\")"
+    },
+    {
+      "number": 130,
+      "text": ""
+    },
+    {
+      "number": 131,
+      "text": ""
+    },
+    {
+      "number": 132,
+      "text": "class OpenRouterModelConfig(BaseModelConfig):"
+    },
+    {
+      "number": 133,
+      "text": "    model_name: OptStr = \"openai/gpt-5.4\""
+    },
+    {
+      "number": 134,
+      "text": "    openrouter_api_key: OptStr = \"\""
+    },
+    {
+      "number": 135,
+      "text": "    openrouter_endpoint: OptStr = \"https://openrouter.ai/api/v1/chat/completions\""
+    },
+    {
+      "number": 136,
+      "text": "    http_referer: OptStr = \"\""
+    },
+    {
+      "number": 137,
+      "text": "    app_title: OptStr = \"\""
+    },
+    {
+      "number": 138,
+      "text": "    provider_require_parameters: bool = True"
+    },
+    {
+      "number": 139,
+      "text": ""
+    },
+    {
+      "number": 140,
+      "text": ""
+    },
+    {
+      "number": 141,
+      "text": "class OpenRouterModel(BaseModel):"
+    },
+    {
+      "number": 142,
+      "text": "    _API_KEY_FIELD = \"openrouter_api_key\""
+    },
+    {
+      "number": 143,
+      "text": "    _ENV_VAR = \"OPENROUTER_API_KEY\""
+    },
+    {
+      "number": 144,
+      "text": "    _LOG_SOURCE = \"openrouter\""
+    },
+    {
+      "number": 145,
+      "text": "    _MAX_RATE_LIMIT_RETRIES = 5"
+    },
+    {
+      "number": 146,
+      "text": "    _MAX_TRANSIENT_RETRIES = 5"
+    },
+    {
+      "number": 147,
+      "text": "    _DEFAULT_CONFIG_CLASS = OpenRouterModelConfig"
+    },
+    {
+      "number": 148,
+      "text": ""
+    },
+    {
+      "number": 149,
+      "text": "    def _request_headers(self) -> dict[str, str]:"
+    },
+    {
+      "number": 150,
+      "text": "        headers = {"
+    },
+    {
+      "number": 151,
+      "text": "            \"Content-Type\": \"application/json\","
+    },
+    {
+      "number": 152,
+      "text": "            \"Authorization\": f\"Bearer {self.config.openrouter_api_key}\","
+    },
+    {
+      "number": 153,
+      "text": "        }"
+    },
+    {
+      "number": 154,
+      "text": "        if _is_openrouter_endpoint(self.config.openrouter_endpoint) and self.config.http_referer:"
+    },
+    {
+      "number": 155,
+      "text": "            headers[\"HTTP-Referer\"] = self.config.http_referer"
+    },
+    {
+      "number": 156,
+      "text": "        if _is_openrouter_endpoint(self.config.openrouter_endpoint) and self.config.app_title:"
+    },
+    {
+      "number": 157,
+      "text": "            headers[\"X-Title\"] = self.config.app_title"
+    },
+    {
+      "number": 158,
+      "text": "        return headers"
+    },
+    {
+      "number": 159,
+      "text": ""
+    },
+    {
+      "number": 160,
+      "text": "    def _post_url(self) -> str:"
+    },
+    {
+      "number": 161,
+      "text": "        return self.config.openrouter_endpoint"
+    },
+    {
+      "number": 162,
+      "text": ""
+    },
+    {
+      "number": 163,
+      "text": "    def _build_payload(self, messages: list[dict[str, Any]]) -> dict[str, Any]:"
+    },
+    {
+      "number": 164,
+      "text": "        payload: dict[str, Any] = {"
+    },
+    {
+      "number": 165,
+      "text": "            \"model\": self.config.model_name,"
+    },
+    {
+      "number": 166,
+      "text": "            \"messages\": _serialize_chat_messages(messages),"
+    },
+    {
+      "number": 167,
+      "text": "            \"stream\": False,"
+    },
+    {
+      "number": 168,
+      "text": "            \"response_format\": {"
+    },
+    {
+      "number": 169,
+      "text": "                \"type\": \"json_schema\","
+    },
+    {
+      "number": 170,
+      "text": "                \"json_schema\": {"
+    },
+    {
+      "number": 171,
+      "text": "                    \"name\": \"playwright_step\","
+    },
+    {
+      "number": 172,
+      "text": "                    \"strict\": True,"
+    },
+    {
+      "number": 173,
+      "text": "                    \"schema\": self._response_schema(),"
+    },
+    {
+      "number": 174,
+      "text": "                },"
+    },
+    {
+      "number": 175,
+      "text": "            },"
+    },
+    {
+      "number": 176,
+      "text": "        }"
+    },
+    {
+      "number": 177,
+      "text": "        if _is_openai_endpoint(self.config.openrouter_endpoint) and self.config.model_name.startswith(\"gpt-5\"):"
+    },
+    {
+      "number": 178,
+      "text": "            payload[\"max_completion_tokens\"] = self.config.max_output_tokens"
+    },
+    {
+      "number": 179,
+      "text": "        else:"
+    },
+    {
+      "number": 180,
+      "text": "            payload[\"max_tokens\"] = self.config.max_output_tokens"
+    },
+    {
+      "number": 181,
+      "text": "        if self.config.provider_require_parameters and _is_openrouter_endpoint(self.config.openrouter_endpoint):"
+    },
+    {
+      "number": 182,
+      "text": "            payload[\"provider\"] = {\"require_parameters\": True}"
+    },
+    {
+      "number": 183,
+      "text": "        return payload"
+    },
+    {
+      "number": 184,
+      "text": ""
+    },
+    {
+      "number": 185,
+      "text": "    def _build_text_payload(self, messages: list[dict[str, Any]]) -> dict[str, Any]:"
+    },
+    {
+      "number": 186,
+      "text": "        payload: dict[str, Any] = {"
+    },
+    {
+      "number": 187,
+      "text": "            \"model\": self.config.model_name,"
+    },
+    {
+      "number": 188,
+      "text": "            \"messages\": _serialize_chat_messages(messages),"
+    },
+    {
+      "number": 189,
+      "text": "            \"stream\": False,"
+    },
+    {
+      "number": 190,
+      "text": "        }"
+    },
+    {
+      "number": 191,
+      "text": "        if _is_openai_endpoint(self.config.openrouter_endpoint) and self.config.model_name.startswith(\"gpt-5\"):"
+    },
+    {
+      "number": 192,
+      "text": "            payload[\"max_completion_tokens\"] = self.config.max_output_tokens"
+    },
+    {
+      "number": 193,
+      "text": "        else:"
+    },
+    {
+      "number": 194,
+      "text": "            payload[\"max_tokens\"] = self.config.max_output_tokens"
+    },
+    {
+      "number": 195,
+      "text": "        if self.config.provider_require_parameters and _is_openrouter_endpoint(self.config.openrouter_endpoint):"
+    },
+    {
+      "number": 196,
+      "text": "            payload[\"provider\"] = {\"require_parameters\": True}"
+    },
+    {
+      "number": 197,
+      "text": "        return payload"
+    },
+    {
+      "number": 198,
+      "text": ""
+    },
+    {
+      "number": 199,
+      "text": "    def _request_metrics_input(self, payload: dict[str, Any]) -> list[dict[str, Any]]:"
+    },
+    {
+      "number": 200,
+      "text": "        return _metrics_input_from_chat_messages(payload.get(\"messages\") or [])"
+    },
+    {
+      "number": 201,
+      "text": ""
+    },
+    {
+      "number": 202,
+      "text": "    def _extract_text(self, payload: dict[str, Any]) -> str:"
+    },
+    {
+      "number": 203,
+      "text": "        return _extract_chat_completions_text(payload)"
+    },
+    {
+      "number": 204,
+      "text": ""
+    },
+    {
+      "number": 205,
+      "text": "    def _usage_metrics_from_payload(self, payload: dict[str, Any]) -> dict[str, int]:"
+    },
+    {
+      "number": 206,
+      "text": "        return _usage_metrics_from_chat_completions(payload)"
+    }
+  ],
+  "error": null
+}

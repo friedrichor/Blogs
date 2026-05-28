@@ -1,0 +1,756 @@
+{
+  "id": "file-6e13f1b9e160",
+  "path": "skills/webwright/reference/cli_tool_mode.md",
+  "language": "markdown",
+  "lines": [
+    {
+      "number": 1,
+      "text": "# CLI Tool Mode"
+    },
+    {
+      "number": 2,
+      "text": ""
+    },
+    {
+      "number": 3,
+      "text": "Default Webwright runs (`/webwright:run`, plain prompt) produce a one-shot"
+    },
+    {
+      "number": 4,
+      "text": "`final_script.py` that solves the task for the literal values the user"
+    },
+    {
+      "number": 5,
+      "text": "provided. **CLI tool mode** (`/webwright:craft`) instead produces a"
+    },
+    {
+      "number": 6,
+      "text": "**reusable, parameterized CLI tool**: the same script can be re-run later"
+    },
+    {
+      "number": 7,
+      "text": "with different argument values to perform the same kind of task."
+    },
+    {
+      "number": 8,
+      "text": ""
+    },
+    {
+      "number": 9,
+      "text": "This mode is adapted from `webwright/src/webwright/config/crafted_cli.yaml`'s"
+    },
+    {
+      "number": 10,
+      "text": "\"Final-Script Shape (CLI Tool, MANDATORY)\" contract. The OpenAI-backed"
+    },
+    {
+      "number": 11,
+      "text": "`self_reflection` gate is replaced by your own self-verification against"
+    },
+    {
+      "number": 12,
+      "text": "`plan.md`."
+    },
+    {
+      "number": 13,
+      "text": ""
+    },
+    {
+      "number": 14,
+      "text": "## When to use"
+    },
+    {
+      "number": 15,
+      "text": ""
+    },
+    {
+      "number": 16,
+      "text": "Trigger CLI tool mode when:"
+    },
+    {
+      "number": 17,
+      "text": ""
+    },
+    {
+      "number": 18,
+      "text": "- the user invokes `/webwright:craft …`, or"
+    },
+    {
+      "number": 19,
+      "text": "- the user says \"make it reusable\", \"parameterize\", \"turn this into a CLI\","
+    },
+    {
+      "number": 20,
+      "text": "  \"I want to call this again with different X\", or similar."
+    },
+    {
+      "number": 21,
+      "text": ""
+    },
+    {
+      "number": 22,
+      "text": "Otherwise, stay in default one-shot mode."
+    },
+    {
+      "number": 23,
+      "text": ""
+    },
+    {
+      "number": 24,
+      "text": "## `plan.md` — add a `# Parameters` section"
+    },
+    {
+      "number": 25,
+      "text": ""
+    },
+    {
+      "number": 26,
+      "text": "Before writing the script, identify every requirement the user could"
+    },
+    {
+      "number": 27,
+      "text": "plausibly vary and list them in `plan.md` **in addition to** the usual"
+    },
+    {
+      "number": 28,
+      "text": "`# Critical Points` checklist:"
+    },
+    {
+      "number": 29,
+      "text": ""
+    },
+    {
+      "number": 30,
+      "text": "```markdown"
+    },
+    {
+      "number": 31,
+      "text": "# Task"
+    },
+    {
+      "number": 32,
+      "text": "<verbatim task description>"
+    },
+    {
+      "number": 33,
+      "text": ""
+    },
+    {
+      "number": 34,
+      "text": "# Parameters"
+    },
+    {
+      "number": 35,
+      "text": "| name    | type | source phrase from task | default     | allowed / format        |"
+    },
+    {
+      "number": 36,
+      "text": "|---------|------|-------------------------|-------------|-------------------------|"
+    },
+    {
+      "number": 37,
+      "text": "| <arg_a> | str  | \"...\"                   | \"<value>\"   | <format / allowed set>  |"
+    },
+    {
+      "number": 38,
+      "text": "| <arg_b> | int  | \"...\"                   | <value>     | <range or units>        |"
+    },
+    {
+      "number": 39,
+      "text": "| <arg_c> | str  | \"...\"                   | \"<value>\"   | <format>                |"
+    },
+    {
+      "number": 40,
+      "text": ""
+    },
+    {
+      "number": 41,
+      "text": "# Critical Points"
+    },
+    {
+      "number": 42,
+      "text": "- [ ] CP1: ..."
+    },
+    {
+      "number": 43,
+      "text": "- [ ] CP2: ..."
+    },
+    {
+      "number": 44,
+      "text": "```"
+    },
+    {
+      "number": 45,
+      "text": ""
+    },
+    {
+      "number": 46,
+      "text": "Rules:"
+    },
+    {
+      "number": 47,
+      "text": ""
+    },
+    {
+      "number": 48,
+      "text": "- Every entry in `# Parameters` must (a) become a function argument and"
+    },
+    {
+      "number": 49,
+      "text": "  (b) become an `argparse --flag` with the listed default."
+    },
+    {
+      "number": 50,
+      "text": "- Items that are truly fixed for the site (start URL, site name, selector"
+    },
+    {
+      "number": 51,
+      "text": "  strategy) are NOT parameters — keep them hard-coded."
+    },
+    {
+      "number": 52,
+      "text": "- Defaults reproduce the original task exactly. Running"
+    },
+    {
+      "number": 53,
+      "text": "  `python final_script.py` with no arguments must reproduce the task."
+    },
+    {
+      "number": 54,
+      "text": "- Critical Points are still required; they are the verification contract."
+    },
+    {
+      "number": 55,
+      "text": ""
+    },
+    {
+      "number": 56,
+      "text": "## `final_script.py` — required shape"
+    },
+    {
+      "number": 57,
+      "text": ""
+    },
+    {
+      "number": 58,
+      "text": "1. **One reusable function** named after the task domain. Examples:"
+    },
+    {
+      "number": 59,
+      "text": "   - `def search_<domain>(arg_a, arg_b, ...): ...`"
+    },
+    {
+      "number": 60,
+      "text": "   - `def lookup_<entity>(query, filters): ...`"
+    },
+    {
+      "number": 61,
+      "text": ""
+    },
+    {
+      "number": 62,
+      "text": "2. **Google-style docstring** with summary, full `Args:` block, and"
+    },
+    {
+      "number": 63,
+      "text": "   `Returns:`. Each `Args:` entry documents:"
+    },
+    {
+      "number": 64,
+      "text": "   - the argument name and type,"
+    },
+    {
+      "number": 65,
+      "text": "   - what it represents in the task domain,"
+    },
+    {
+      "number": 66,
+      "text": "   - accepted format / units / allowed values,"
+    },
+    {
+      "number": 67,
+      "text": "   - the default (mirroring the `# Parameters` table)."
+    },
+    {
+      "number": 68,
+      "text": ""
+    },
+    {
+      "number": 69,
+      "text": "   ```python"
+    },
+    {
+      "number": 70,
+      "text": "   def search_<domain>(arg_a: str, arg_b: int, arg_c: str) -> dict:"
+    },
+    {
+      "number": 71,
+      "text": "       \"\"\"<One-line summary of what this tool does on the target site>."
+    },
+    {
+      "number": 72,
+      "text": ""
+    },
+    {
+      "number": 73,
+      "text": "       Args:"
+    },
+    {
+      "number": 74,
+      "text": "           arg_a: <what it represents>; <format / allowed values>."
+    },
+    {
+      "number": 75,
+      "text": "               Default: \"<value>\"."
+    },
+    {
+      "number": 76,
+      "text": "           arg_b: <what it represents>; <range / units>."
+    },
+    {
+      "number": 77,
+      "text": "               Default: <value>."
+    },
+    {
+      "number": 78,
+      "text": "           arg_c: <what it represents>; <format>."
+    },
+    {
+      "number": 79,
+      "text": "               Default: \"<value>\"."
+    },
+    {
+      "number": 80,
+      "text": ""
+    },
+    {
+      "number": 81,
+      "text": "       Returns:"
+    },
+    {
+      "number": 82,
+      "text": "           dict with keys ``<key1>`` (<type>), ``<key2>`` (<type>),"
+    },
+    {
+      "number": 83,
+      "text": "       \"\"\""
+    },
+    {
+      "number": 84,
+      "text": "   ```"
+    },
+    {
+      "number": 85,
+      "text": ""
+    },
+    {
+      "number": 86,
+      "text": "3. **`argparse` CLI** under `if __name__ == \"__main__\":`. Every function"
+    },
+    {
+      "number": 87,
+      "text": "   argument has a matching `--<arg>` flag with `type=`, `help=` (copied"
+    },
+    {
+      "number": 88,
+      "text": "   from the docstring), and `default=` equal to the concrete task value:"
+    },
+    {
+      "number": 89,
+      "text": ""
+    },
+    {
+      "number": 90,
+      "text": "   ```python"
+    },
+    {
+      "number": 91,
+      "text": "   if __name__ == \"__main__\":"
+    },
+    {
+      "number": 92,
+      "text": "       import argparse"
+    },
+    {
+      "number": 93,
+      "text": "       parser = argparse.ArgumentParser("
+    },
+    {
+      "number": 94,
+      "text": "           description=search_<domain>.__doc__.splitlines()[0])"
+    },
+    {
+      "number": 95,
+      "text": "       parser.add_argument(\"--arg-a\", dest=\"arg_a\", type=str,"
+    },
+    {
+      "number": 96,
+      "text": "                           default=\"<value>\","
+    },
+    {
+      "number": 97,
+      "text": "                           help=\"<copied from docstring>\")"
+    },
+    {
+      "number": 98,
+      "text": "       parser.add_argument(\"--arg-b\", dest=\"arg_b\", type=int,"
+    },
+    {
+      "number": 99,
+      "text": "                           default=<value>,"
+    },
+    {
+      "number": 100,
+      "text": "                           help=\"<copied from docstring>\")"
+    },
+    {
+      "number": 101,
+      "text": "       parser.add_argument(\"--arg-c\", dest=\"arg_c\", type=str,"
+    },
+    {
+      "number": 102,
+      "text": "                           default=\"<value>\","
+    },
+    {
+      "number": 103,
+      "text": "                           help=\"<copied from docstring>\")"
+    },
+    {
+      "number": 104,
+      "text": "       args = parser.parse_args()"
+    },
+    {
+      "number": 105,
+      "text": "       result = asyncio.run(_run(**vars(args)))"
+    },
+    {
+      "number": 106,
+      "text": "       print(result)"
+    },
+    {
+      "number": 107,
+      "text": "   ```"
+    },
+    {
+      "number": 108,
+      "text": ""
+    },
+    {
+      "number": 109,
+      "text": "4. **Side-effect-free at import time.** No browser launch, no network"
+    },
+    {
+      "number": 110,
+      "text": "   call, no file write at module top-level. The reusable function must be"
+    },
+    {
+      "number": 111,
+      "text": "   importable from another Python process without triggering a run."
+    },
+    {
+      "number": 112,
+      "text": ""
+    },
+    {
+      "number": 113,
+      "text": "5. **Action-log parameter echo.** The first line written to"
+    },
+    {
+      "number": 114,
+      "text": "   `final_script_log.txt` after reset MUST be a `step 0 params: ...`"
+    },
+    {
+      "number": 115,
+      "text": "   line listing every resolved argument as `name=value` pairs, e.g.:"
+    },
+    {
+      "number": 116,
+      "text": ""
+    },
+    {
+      "number": 117,
+      "text": "   ```"
+    },
+    {
+      "number": 118,
+      "text": "   step 0 params: arg_a=<value> arg_b=<value> arg_c=<value>"
+    },
+    {
+      "number": 119,
+      "text": "   ```"
+    },
+    {
+      "number": 120,
+      "text": ""
+    },
+    {
+      "number": 121,
+      "text": "   so the resolved inputs are visible in any verification pass."
+    },
+    {
+      "number": 122,
+      "text": ""
+    },
+    {
+      "number": 123,
+      "text": "6. Same instrumentation as default mode: viewport 1280×1800, headless"
+    },
+    {
+      "number": 124,
+      "text": "   local Firefox, no `full_page=True`, screenshots saved as"
+    },
+    {
+      "number": 125,
+      "text": "   `final_runs/run_<id>/screenshots/final_execution_<step>_<action>.png`,"
+    },
+    {
+      "number": 126,
+      "text": "   final datum appended to `final_script_log.txt`."
+    },
+    {
+      "number": 127,
+      "text": ""
+    },
+    {
+      "number": 128,
+      "text": "## Verification (replaces `self_reflection`)"
+    },
+    {
+      "number": 129,
+      "text": ""
+    },
+    {
+      "number": 130,
+      "text": "In addition to the default self-verification (every CP in `plan.md`"
+    },
+    {
+      "number": 131,
+      "text": "ticked with cited screenshot/log evidence), CLI mode requires:"
+    },
+    {
+      "number": 132,
+      "text": ""
+    },
+    {
+      "number": 133,
+      "text": "1. **Reproduce the task with no arguments.** Inside a fresh"
+    },
+    {
+      "number": 134,
+      "text": "   `final_runs/run_<id>/`:"
+    },
+    {
+      "number": 135,
+      "text": ""
+    },
+    {
+      "number": 136,
+      "text": "   ```bash"
+    },
+    {
+      "number": 137,
+      "text": "   cd final_runs/run_<id> && python final_script.py"
+    },
+    {
+      "number": 138,
+      "text": "   ```"
+    },
+    {
+      "number": 139,
+      "text": ""
+    },
+    {
+      "number": 140,
+      "text": "   The run must succeed end-to-end and produce the expected screenshots"
+    },
+    {
+      "number": 141,
+      "text": "   and `step 0 params: ...` log line."
+    },
+    {
+      "number": 142,
+      "text": ""
+    },
+    {
+      "number": 143,
+      "text": "2. **Import-safety smoke test.** From any other directory:"
+    },
+    {
+      "number": 144,
+      "text": ""
+    },
+    {
+      "number": 145,
+      "text": "   ```bash"
+    },
+    {
+      "number": 146,
+      "text": "   python -c \"import importlib.util, pathlib; \\"
+    },
+    {
+      "number": 147,
+      "text": "     spec = importlib.util.spec_from_file_location('fs', 'final_runs/run_<id>/final_script.py'); \\"
+    },
+    {
+      "number": 148,
+      "text": "     m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); \\"
+    },
+    {
+      "number": 149,
+      "text": "     print([n for n in dir(m) if not n.startswith('_')])\""
+    },
+    {
+      "number": 150,
+      "text": "   ```"
+    },
+    {
+      "number": 151,
+      "text": ""
+    },
+    {
+      "number": 152,
+      "text": "   This must complete instantly with no browser launch and print the"
+    },
+    {
+      "number": 153,
+      "text": "   reusable function's name."
+    },
+    {
+      "number": 154,
+      "text": ""
+    },
+    {
+      "number": 155,
+      "text": "3. **Optional second run with a different argument value.** Demonstrates"
+    },
+    {
+      "number": 156,
+      "text": "   parameterization actually works. Run inside `final_runs/run_<id>_alt/`"
+    },
+    {
+      "number": 157,
+      "text": "   (or just save its log/screenshot folder there). Skip only if the"
+    },
+    {
+      "number": 158,
+      "text": "   alternate value would clearly fail (e.g. an unsupported value on the"
+    },
+    {
+      "number": 159,
+      "text": "   target site)."
+    },
+    {
+      "number": 160,
+      "text": ""
+    },
+    {
+      "number": 161,
+      "text": "4. **Print `--help`.** End by showing the user:"
+    },
+    {
+      "number": 162,
+      "text": ""
+    },
+    {
+      "number": 163,
+      "text": "   ```bash"
+    },
+    {
+      "number": 164,
+      "text": "   python final_runs/run_<id>/final_script.py --help"
+    },
+    {
+      "number": 165,
+      "text": "   ```"
+    },
+    {
+      "number": 166,
+      "text": ""
+    },
+    {
+      "number": 167,
+      "text": "## Completion gate (CLI mode)"
+    },
+    {
+      "number": 168,
+      "text": ""
+    },
+    {
+      "number": 169,
+      "text": "Set the task complete only when **all** are true:"
+    },
+    {
+      "number": 170,
+      "text": ""
+    },
+    {
+      "number": 171,
+      "text": "1. `plan.md` contains both `# Parameters` (with name, type, source phrase,"
+    },
+    {
+      "number": 172,
+      "text": "   default, allowed/format) and `# Critical Points` checklists."
+    },
+    {
+      "number": 173,
+      "text": "2. `final_script.py` defines exactly one reusable function with a"
+    },
+    {
+      "number": 174,
+      "text": "   Google-style `Args:` docstring covering every parameter."
+    },
+    {
+      "number": 175,
+      "text": "3. Every `# Parameters` entry maps 1-to-1 to a function argument **and**"
+    },
+    {
+      "number": 176,
+      "text": "   an argparse `--flag` whose default equals the concrete task value."
+    },
+    {
+      "number": 177,
+      "text": "4. The script is import-safe (smoke test passes)."
+    },
+    {
+      "number": 178,
+      "text": "5. `python final_script.py` (no args) inside `final_runs/run_<id>/`"
+    },
+    {
+      "number": 179,
+      "text": "   reproduced the task; all CPs verified against saved screenshots and"
+    },
+    {
+      "number": 180,
+      "text": "   the action log."
+    },
+    {
+      "number": 181,
+      "text": "6. `step 0 params: ...` line is present in `final_script_log.txt`."
+    },
+    {
+      "number": 182,
+      "text": "7. The user has seen the final datum **and** the `--help` output so they"
+    },
+    {
+      "number": 183,
+      "text": "   know how to call the tool again with different arguments."
+    },
+    {
+      "number": 184,
+      "text": ""
+    },
+    {
+      "number": 185,
+      "text": "If any of those is false, do not declare done — diagnose, fix the script"
+    },
+    {
+      "number": 186,
+      "text": "(preserving the CLI shape), re-run inside the next `run_<id+1>/`, and"
+    },
+    {
+      "number": 187,
+      "text": "re-verify."
+    }
+  ],
+  "error": null
+}

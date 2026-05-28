@@ -1,0 +1,256 @@
+{
+  "id": "file-1526c6eda3b6",
+  "path": "skills/webwright/commands/craft.md",
+  "language": "markdown",
+  "lines": [
+    {
+      "number": 1,
+      "text": "---"
+    },
+    {
+      "number": 2,
+      "text": "description: Craft a reusable Webwright CLI tool by parameterizing a web task."
+    },
+    {
+      "number": 3,
+      "text": "argument-hint: <natural-language web task with concrete values>"
+    },
+    {
+      "number": 4,
+      "text": "---"
+    },
+    {
+      "number": 5,
+      "text": ""
+    },
+    {
+      "number": 6,
+      "text": "You are operating as the Webwright agent in **CLI tool mode**. First read"
+    },
+    {
+      "number": 7,
+      "text": "the `SKILL.md` of the `webwright` skill (the parent directory of this"
+    },
+    {
+      "number": 8,
+      "text": "`commands/` folder) and the `reference/cli_tool_mode.md` next to it,"
+    },
+    {
+      "number": 9,
+      "text": "then parameterize the following task so the resulting `final_script.py`"
+    },
+    {
+      "number": 10,
+      "text": "can be re-run later with different argument values:"
+    },
+    {
+      "number": 11,
+      "text": ""
+    },
+    {
+      "number": 12,
+      "text": "$ARGUMENTS"
+    },
+    {
+      "number": 13,
+      "text": ""
+    },
+    {
+      "number": 14,
+      "text": "Steps:"
+    },
+    {
+      "number": 15,
+      "text": ""
+    },
+    {
+      "number": 16,
+      "text": "1. **Identify parameters.** Extract every requirement the user could"
+    },
+    {
+      "number": 17,
+      "text": "   plausibly vary (search terms, locations, dates, filter values, etc.)."
+    },
+    {
+      "number": 18,
+      "text": "   Items truly fixed for the site (start URL, site name, selector"
+    },
+    {
+      "number": 19,
+      "text": "   strategy) are NOT parameters — keep them hard-coded."
+    },
+    {
+      "number": 20,
+      "text": ""
+    },
+    {
+      "number": 21,
+      "text": "2. **Write `plan.md`.** Add a `# Parameters` table with columns"
+    },
+    {
+      "number": 22,
+      "text": "   `name | type | source phrase | default | allowed/format`, plus the"
+    },
+    {
+      "number": 23,
+      "text": "   usual `# Critical Points` checklist. Defaults must equal the"
+    },
+    {
+      "number": 24,
+      "text": "   concrete task values so `python final_script.py` (no args) reproduces"
+    },
+    {
+      "number": 25,
+      "text": "   the task."
+    },
+    {
+      "number": 26,
+      "text": ""
+    },
+    {
+      "number": 27,
+      "text": "3. **Author `final_script.py`** in a fresh `final_runs/run_<id>/`:"
+    },
+    {
+      "number": 28,
+      "text": "   - One reusable function named after the task domain"
+    },
+    {
+      "number": 29,
+      "text": "     (e.g. `def search_<domain>(arg_a, arg_b, ...): ...`)."
+    },
+    {
+      "number": 30,
+      "text": "   - Google-style docstring with summary, full `Args:` block (name, type,"
+    },
+    {
+      "number": 31,
+      "text": "     meaning, format/units, default), and `Returns:`."
+    },
+    {
+      "number": 32,
+      "text": "   - `argparse` CLI under `if __name__ == \"__main__\":` whose flags"
+    },
+    {
+      "number": 33,
+      "text": "     exactly mirror the function arguments and whose defaults equal the"
+    },
+    {
+      "number": 34,
+      "text": "     concrete task values."
+    },
+    {
+      "number": 35,
+      "text": "   - **Side-effect-free at import time** — no browser launch, no network"
+    },
+    {
+      "number": 36,
+      "text": "     call, no file write at module top-level."
+    },
+    {
+      "number": 37,
+      "text": "   - First log line after reset must be"
+    },
+    {
+      "number": 38,
+      "text": "     `step 0 params: <name>=<value> <name>=<value> ...`."
+    },
+    {
+      "number": 39,
+      "text": "   - Same instrumentation as default mode: viewport 1280×1800, headless"
+    },
+    {
+      "number": 40,
+      "text": "     local Firefox, no `full_page=True`, screenshots and final datum"
+    },
+    {
+      "number": 41,
+      "text": "     saved into the run folder."
+    },
+    {
+      "number": 42,
+      "text": ""
+    },
+    {
+      "number": 43,
+      "text": "4. **Reproduce the task with no arguments.** Run"
+    },
+    {
+      "number": 44,
+      "text": "   `python final_runs/run_<id>/final_script.py` and confirm it succeeds"
+    },
+    {
+      "number": 45,
+      "text": "   end-to-end."
+    },
+    {
+      "number": 46,
+      "text": ""
+    },
+    {
+      "number": 47,
+      "text": "5. **Import-safety smoke test.** Load the module in a separate Python"
+    },
+    {
+      "number": 48,
+      "text": "   process and confirm no browser is launched and the reusable function"
+    },
+    {
+      "number": 49,
+      "text": "   is importable."
+    },
+    {
+      "number": 50,
+      "text": ""
+    },
+    {
+      "number": 51,
+      "text": "6. **Self-verify** every critical point against the saved screenshots"
+    },
+    {
+      "number": 52,
+      "text": "   and the action log (replaces `self_reflection`). If any CP fails,"
+    },
+    {
+      "number": 53,
+      "text": "   diagnose, fix the script (preserving the CLI shape), re-run inside"
+    },
+    {
+      "number": 54,
+      "text": "   `final_runs/run_<id+1>/`, and re-verify."
+    },
+    {
+      "number": 55,
+      "text": ""
+    },
+    {
+      "number": 56,
+      "text": "7. **Show the user `--help`.** End by running"
+    },
+    {
+      "number": 57,
+      "text": "   `python final_runs/run_<id>/final_script.py --help` and reporting"
+    },
+    {
+      "number": 58,
+      "text": "   both the final datum and the help text so the user knows how to call"
+    },
+    {
+      "number": 59,
+      "text": "   the tool again with different arguments."
+    },
+    {
+      "number": 60,
+      "text": ""
+    },
+    {
+      "number": 61,
+      "text": "Refer to `reference/cli_tool_mode.md` for the complete contract and"
+    },
+    {
+      "number": 62,
+      "text": "`reference/playwright_patterns.md` for the Playwright skeleton."
+    }
+  ],
+  "error": null
+}

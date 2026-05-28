@@ -1,0 +1,52 @@
+{
+  "id": "file-428e2e77ea89",
+  "path": "src/webwright/config/model_openai.yaml",
+  "language": "yaml",
+  "lines": [
+    {
+      "number": 1,
+      "text": "# Model modifier — OpenAI variant."
+    },
+    {
+      "number": 2,
+      "text": "#"
+    },
+    {
+      "number": 3,
+      "text": "# Stack on top of base.yaml:"
+    },
+    {
+      "number": 4,
+      "text": "#   python -m webwright.run.cli -c base.yaml -c model_openai.yaml ..."
+    },
+    {
+      "number": 5,
+      "text": "#"
+    },
+    {
+      "number": 6,
+      "text": "# Required env: OPENAI_API_KEY (also used by image_qa / self_reflection tools)."
+    },
+    {
+      "number": 7,
+      "text": ""
+    },
+    {
+      "number": 8,
+      "text": "model:"
+    },
+    {
+      "number": 9,
+      "text": "  model_class: openai"
+    },
+    {
+      "number": 10,
+      "text": "  model_name: gpt-5.4"
+    },
+    {
+      "number": 11,
+      "text": "  openai_endpoint: https://api.openai.com/v1/responses"
+    }
+  ],
+  "error": null
+}

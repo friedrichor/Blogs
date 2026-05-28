@@ -1,0 +1,1876 @@
+{
+  "id": "file-e313798ded40",
+  "path": "src/webwright/agents/default.py",
+  "language": "python",
+  "lines": [
+    {
+      "number": 1,
+      "text": "from __future__ import annotations"
+    },
+    {
+      "number": 2,
+      "text": ""
+    },
+    {
+      "number": 3,
+      "text": "import copy"
+    },
+    {
+      "number": 4,
+      "text": "import json"
+    },
+    {
+      "number": 5,
+      "text": "from pathlib import Path"
+    },
+    {
+      "number": 6,
+      "text": "from typing import Any"
+    },
+    {
+      "number": 7,
+      "text": ""
+    },
+    {
+      "number": 8,
+      "text": "from jinja2 import StrictUndefined, Template"
+    },
+    {
+      "number": 9,
+      "text": "from pydantic import BaseModel"
+    },
+    {
+      "number": 10,
+      "text": ""
+    },
+    {
+      "number": 11,
+      "text": "from webwright import Environment, Model, __version__"
+    },
+    {
+      "number": 12,
+      "text": "from webwright.exceptions import FormatError, InterruptAgentFlow, LimitsExceeded"
+    },
+    {
+      "number": 13,
+      "text": "from webwright.utils.serialize import recursive_merge"
+    },
+    {
+      "number": 14,
+      "text": ""
+    },
+    {
+      "number": 15,
+      "text": ""
+    },
+    {
+      "number": 16,
+      "text": "DEFAULT_SUMMARY_USER_PROMPT = \"\"\"You are about to have your working context compacted to save tokens."
+    },
+    {
+      "number": 17,
+      "text": ""
+    },
+    {
+      "number": 18,
+      "text": "Write a concise but COMPLETE summary of everything relevant from the conversation above so that a fresh"
+    },
+    {
+      "number": 19,
+      "text": "agent with only this summary (plus the original system prompt and task instructions) can continue the"
+    },
+    {
+      "number": 20,
+      "text": "task without losing progress. Include:"
+    },
+    {
+      "number": 21,
+      "text": ""
+    },
+    {
+      "number": 22,
+      "text": "- The original task goal and all critical points / constraints."
+    },
+    {
+      "number": 23,
+      "text": "- The workspace directory and key file paths (plan.md, self_reflect_config.json, final_script.py, final_runs/)."
+    },
+    {
+      "number": 24,
+      "text": "- Which critical points have been satisfied, which are still open, and any known blockers."
+    },
+    {
+      "number": 25,
+      "text": "- Key findings from prior exploration (working selectors, URLs, ARIA labels, pitfalls to avoid)."
+    },
+    {
+      "number": 26,
+      "text": "- The latest final_runs/run_<id>/ state, most recent self_reflection verdict, and the next action to take."
+    },
+    {
+      "number": 27,
+      "text": ""
+    },
+    {
+      "number": 28,
+      "text": "Write the summary as plain prose and bullet lists. Do NOT issue a new bash_command. Do NOT set done=true."
+    },
+    {
+      "number": 29,
+      "text": "Put the entire summary in the `thought` field (or equivalent text field) and leave action fields empty.\"\"\""
+    },
+    {
+      "number": 30,
+      "text": ""
+    },
+    {
+      "number": 31,
+      "text": ""
+    },
+    {
+      "number": 32,
+      "text": "class AgentConfig(BaseModel):"
+    },
+    {
+      "number": 33,
+      "text": "    system_template: str"
+    },
+    {
+      "number": 34,
+      "text": "    instance_template: str"
+    },
+    {
+      "number": 35,
+      "text": "    step_limit: int = 15"
+    },
+    {
+      "number": 36,
+      "text": "    debug_log: bool = True"
+    },
+    {
+      "number": 37,
+      "text": "    attach_instance_template_after_observation: bool = False"
+    },
+    {
+      "number": 38,
+      "text": "    attach_plan_md_after_observation: bool = False"
+    },
+    {
+      "number": 39,
+      "text": "    require_self_reflection_success: bool = False"
+    },
+    {
+      "number": 40,
+      "text": "    summary_every_n_steps: int = 0"
+    },
+    {
+      "number": 41,
+      "text": "    summary_user_prompt: str = DEFAULT_SUMMARY_USER_PROMPT"
+    },
+    {
+      "number": 42,
+      "text": "    # Strip the ARIA snapshot payload from observation messages older than the last N"
+    },
+    {
+      "number": 43,
+      "text": "    # to bound context growth in browser-driven modes. Any value <= 0 disables pruning"
+    },
+    {
+      "number": 44,
+      "text": "    # (default). Opt in per config (e.g. local_browser.yaml sets this to 1)."
+    },
+    {
+      "number": 45,
+      "text": "    keep_last_n_observations: int = -1"
+    },
+    {
+      "number": 46,
+      "text": "    output_path: Path | None = None"
+    },
+    {
+      "number": 47,
+      "text": ""
+    },
+    {
+      "number": 48,
+      "text": ""
+    },
+    {
+      "number": 49,
+      "text": "def _sanitize_message_for_disk(message: dict[str, Any]) -> dict[str, Any]:"
+    },
+    {
+      "number": 50,
+      "text": "    cloned = copy.deepcopy(message)"
+    },
+    {
+      "number": 51,
+      "text": "    content = cloned.get(\"content\")"
+    },
+    {
+      "number": 52,
+      "text": "    if isinstance(content, list):"
+    },
+    {
+      "number": 53,
+      "text": "        for part in content:"
+    },
+    {
+      "number": 54,
+      "text": "            if isinstance(part, dict) and part.get(\"type\") == \"input_image\":"
+    },
+    {
+      "number": 55,
+      "text": "                part[\"image_url\"] = \"<omitted:data-url>\""
+    },
+    {
+      "number": 56,
+      "text": "    return cloned"
+    },
+    {
+      "number": 57,
+      "text": ""
+    },
+    {
+      "number": 58,
+      "text": ""
+    },
+    {
+      "number": 59,
+      "text": "def _observation_for_markdown(observation: dict[str, Any], *, model_usage: dict[str, Any] | None = None) -> dict[str, Any]:"
+    },
+    {
+      "number": 60,
+      "text": "    cloned = copy.deepcopy(observation)"
+    },
+    {
+      "number": 61,
+      "text": "    cloned.pop(\"aria_snapshot\", None)"
+    },
+    {
+      "number": 62,
+      "text": "    if model_usage:"
+    },
+    {
+      "number": 63,
+      "text": "        cloned[\"model_usage\"] = copy.deepcopy(model_usage)"
+    },
+    {
+      "number": 64,
+      "text": "    return cloned"
+    },
+    {
+      "number": 65,
+      "text": ""
+    },
+    {
+      "number": 66,
+      "text": ""
+    },
+    {
+      "number": 67,
+      "text": "def _action_text(action: dict[str, Any]) -> str:"
+    },
+    {
+      "number": 68,
+      "text": "    return str(action.get(\"bash_command\") or action.get(\"command\") or action.get(\"python_code\") or \"\").strip()"
+    },
+    {
+      "number": 69,
+      "text": ""
+    },
+    {
+      "number": 70,
+      "text": ""
+    },
+    {
+      "number": 71,
+      "text": "def _python_action_text(action: dict[str, Any]) -> str:"
+    },
+    {
+      "number": 72,
+      "text": "    return str(action.get(\"python_code\") or \"\").strip()"
+    },
+    {
+      "number": 73,
+      "text": ""
+    },
+    {
+      "number": 74,
+      "text": ""
+    },
+    {
+      "number": 75,
+      "text": "def _markdown_code_fence_language(*, bash_command_text: str, python_code_text: str) -> str:"
+    },
+    {
+      "number": 76,
+      "text": "    if bash_command_text:"
+    },
+    {
+      "number": 77,
+      "text": "        return \"bash\""
+    },
+    {
+      "number": 78,
+      "text": "    if python_code_text:"
+    },
+    {
+      "number": 79,
+      "text": "        return \"python\""
+    },
+    {
+      "number": 80,
+      "text": "    return \"\""
+    },
+    {
+      "number": 81,
+      "text": ""
+    },
+    {
+      "number": 82,
+      "text": ""
+    },
+    {
+      "number": 83,
+      "text": "class DefaultAgent:"
+    },
+    {
+      "number": 84,
+      "text": "    def __init__(self, model: Model, env: Environment, *, config_class: type = AgentConfig, **kwargs):"
+    },
+    {
+      "number": 85,
+      "text": "        self.config = config_class(**kwargs)"
+    },
+    {
+      "number": 86,
+      "text": "        self.messages: list[dict[str, Any]] = []"
+    },
+    {
+      "number": 87,
+      "text": "        self.model = model"
+    },
+    {
+      "number": 88,
+      "text": "        self.env = env"
+    },
+    {
+      "number": 89,
+      "text": "        self.extra_template_vars: dict[str, Any] = {}"
+    },
+    {
+      "number": 90,
+      "text": "        self.n_calls = 0"
+    },
+    {
+      "number": 91,
+      "text": "        self.n_format_errors = 0"
+    },
+    {
+      "number": 92,
+      "text": ""
+    },
+    {
+      "number": 93,
+      "text": "    def _debug_dir(self) -> Path | None:"
+    },
+    {
+      "number": 94,
+      "text": "        if self.config.output_path is None:"
+    },
+    {
+      "number": 95,
+      "text": "            return None"
+    },
+    {
+      "number": 96,
+      "text": "        return self.config.output_path.parent / \"debug\""
+    },
+    {
+      "number": 97,
+      "text": ""
+    },
+    {
+      "number": 98,
+      "text": "    def _write_debug_step_artifact("
+    },
+    {
+      "number": 99,
+      "text": "        self,"
+    },
+    {
+      "number": 100,
+      "text": "        *,"
+    },
+    {
+      "number": 101,
+      "text": "        step_index: int,"
+    },
+    {
+      "number": 102,
+      "text": "        assistant_message: dict[str, Any],"
+    },
+    {
+      "number": 103,
+      "text": "        outputs: list[dict[str, Any]] | None = None,"
+    },
+    {
+      "number": 104,
+      "text": "    ) -> None:"
+    },
+    {
+      "number": 105,
+      "text": "        if not self.config.debug_log:"
+    },
+    {
+      "number": 106,
+      "text": "            return"
+    },
+    {
+      "number": 107,
+      "text": "        debug_dir = self._debug_dir()"
+    },
+    {
+      "number": 108,
+      "text": "        if debug_dir is None:"
+    },
+    {
+      "number": 109,
+      "text": "            return"
+    },
+    {
+      "number": 110,
+      "text": "        steps_dir = debug_dir / \"steps\""
+    },
+    {
+      "number": 111,
+      "text": "        steps_dir.mkdir(parents=True, exist_ok=True)"
+    },
+    {
+      "number": 112,
+      "text": ""
+    },
+    {
+      "number": 113,
+      "text": "        extra = assistant_message.get(\"extra\", {})"
+    },
+    {
+      "number": 114,
+      "text": "        actions = extra.get(\"actions\", [])"
+    },
+    {
+      "number": 115,
+      "text": "        action_text = \"\\n\\n\".join(_action_text(action) for action in actions if _action_text(action))"
+    },
+    {
+      "number": 116,
+      "text": "        python_code_text = \"\\n\\n\".join("
+    },
+    {
+      "number": 117,
+      "text": "            _python_action_text(action) for action in actions if _python_action_text(action)"
+    },
+    {
+      "number": 118,
+      "text": "        )"
+    },
+    {
+      "number": 119,
+      "text": "        bash_command_text = \"\\n\\n\".join("
+    },
+    {
+      "number": 120,
+      "text": "            str(action.get(\"bash_command\", \"\")).strip()"
+    },
+    {
+      "number": 121,
+      "text": "            for action in actions"
+    },
+    {
+      "number": 122,
+      "text": "            if str(action.get(\"bash_command\", \"\")).strip()"
+    },
+    {
+      "number": 123,
+      "text": "        )"
+    },
+    {
+      "number": 124,
+      "text": "        code_fence_language = _markdown_code_fence_language("
+    },
+    {
+      "number": 125,
+      "text": "            bash_command_text=bash_command_text,"
+    },
+    {
+      "number": 126,
+      "text": "            python_code_text=python_code_text,"
+    },
+    {
+      "number": 127,
+      "text": "        )"
+    },
+    {
+      "number": 128,
+      "text": "        payload = {"
+    },
+    {
+      "number": 129,
+      "text": "            \"step\": step_index,"
+    },
+    {
+      "number": 130,
+      "text": "            \"thought\": assistant_message.get(\"content\", \"\"),"
+    },
+    {
+      "number": 131,
+      "text": "            \"python_code\": python_code_text,"
+    },
+    {
+      "number": 132,
+      "text": "            \"bash_command\": bash_command_text,"
+    },
+    {
+      "number": 133,
+      "text": "            \"command_text\": action_text,"
+    },
+    {
+      "number": 134,
+      "text": "            \"raw_response\": extra.get(\"raw_response\", {}),"
+    },
+    {
+      "number": 135,
+      "text": "            \"done\": extra.get(\"done\", False),"
+    },
+    {
+      "number": 136,
+      "text": "            \"final_response\": extra.get(\"final_response\", \"\"),"
+    },
+    {
+      "number": 137,
+      "text": "            \"outputs\": outputs or [],"
+    },
+    {
+      "number": 138,
+      "text": "        }"
+    },
+    {
+      "number": 139,
+      "text": "        (steps_dir / f\"step_{step_index:04d}.json\").write_text(json.dumps(payload, indent=2))"
+    },
+    {
+      "number": 140,
+      "text": ""
+    },
+    {
+      "number": 141,
+      "text": "        summary_path = debug_dir / \"steps.md\""
+    },
+    {
+      "number": 142,
+      "text": "        with summary_path.open(\"a\", encoding=\"utf-8\") as handle:"
+    },
+    {
+      "number": 143,
+      "text": "            handle.write(f\"## Step {step_index}\\n\\n\")"
+    },
+    {
+      "number": 144,
+      "text": "            # Attach the model input only for the first step"
+    },
+    {
+      "number": 145,
+      "text": "            if step_index == 1:"
+    },
+    {
+      "number": 146,
+      "text": "                user_input_text = \"\""
+    },
+    {
+      "number": 147,
+      "text": "                for msg in reversed(self.messages):"
+    },
+    {
+      "number": 148,
+      "text": "                    if msg.get(\"role\") == \"user\":"
+    },
+    {
+      "number": 149,
+      "text": "                        content = msg.get(\"content\", \"\")"
+    },
+    {
+      "number": 150,
+      "text": "                        if isinstance(content, list):"
+    },
+    {
+      "number": 151,
+      "text": "                            # Multi-part message: join text parts"
+    },
+    {
+      "number": 152,
+      "text": "                            parts = [p.get(\"text\", \"\") for p in content if isinstance(p, dict) and p.get(\"type\") in (\"text\", \"input_text\")]"
+    },
+    {
+      "number": 153,
+      "text": "                            user_input_text = \"\\n\".join(p for p in parts if p)"
+    },
+    {
+      "number": 154,
+      "text": "                        else:"
+    },
+    {
+      "number": 155,
+      "text": "                            user_input_text = str(content)"
+    },
+    {
+      "number": 156,
+      "text": "                        break"
+    },
+    {
+      "number": 157,
+      "text": "                if user_input_text:"
+    },
+    {
+      "number": 158,
+      "text": "                    handle.write(\"### Model Input\\n\\n\")"
+    },
+    {
+      "number": 159,
+      "text": "                    handle.write(f\"{user_input_text}\\n\\n\")"
+    },
+    {
+      "number": 160,
+      "text": "            handle.write(\"### Thought\\n\\n\")"
+    },
+    {
+      "number": 161,
+      "text": "            handle.write(f\"{payload['thought']}\\n\\n\")"
+    },
+    {
+      "number": 162,
+      "text": "            handle.write(\"### Generated Code\\n\\n\")"
+    },
+    {
+      "number": 163,
+      "text": "            handle.write(f\"```{code_fence_language}\\n\")"
+    },
+    {
+      "number": 164,
+      "text": "            handle.write(f\"{payload['command_text']}\\n\")"
+    },
+    {
+      "number": 165,
+      "text": "            handle.write(\"```\\n\\n\")"
+    },
+    {
+      "number": 166,
+      "text": "            if outputs:"
+    },
+    {
+      "number": 167,
+      "text": "                observation = outputs[0].get(\"observation\", {})"
+    },
+    {
+      "number": 168,
+      "text": "                markdown_observation = _observation_for_markdown("
+    },
+    {
+      "number": 169,
+      "text": "                    observation,"
+    },
+    {
+      "number": 170,
+      "text": "                    model_usage=extra.get(\"usage\"),"
+    },
+    {
+      "number": 171,
+      "text": "                )"
+    },
+    {
+      "number": 172,
+      "text": "                handle.write(\"### Observation\\n\\n\")"
+    },
+    {
+      "number": 173,
+      "text": "                handle.write(\"```json\\n\")"
+    },
+    {
+      "number": 174,
+      "text": "                handle.write(f\"{json.dumps(markdown_observation, indent=2)}\\n\")"
+    },
+    {
+      "number": 175,
+      "text": "                handle.write(\"```\\n\\n\")"
+    },
+    {
+      "number": 176,
+      "text": ""
+    },
+    {
+      "number": 177,
+      "text": "    def get_template_vars(self, **kwargs) -> dict[str, Any]:"
+    },
+    {
+      "number": 178,
+      "text": "        return recursive_merge("
+    },
+    {
+      "number": 179,
+      "text": "            self.config.model_dump(),"
+    },
+    {
+      "number": 180,
+      "text": "            self.env.get_template_vars(),"
+    },
+    {
+      "number": 181,
+      "text": "            self.model.get_template_vars(),"
+    },
+    {
+      "number": 182,
+      "text": "            {\"n_model_calls\": self.n_calls},"
+    },
+    {
+      "number": 183,
+      "text": "            self.extra_template_vars,"
+    },
+    {
+      "number": 184,
+      "text": "            kwargs,"
+    },
+    {
+      "number": 185,
+      "text": "        )"
+    },
+    {
+      "number": 186,
+      "text": ""
+    },
+    {
+      "number": 187,
+      "text": "    def _render_template(self, template: str) -> str:"
+    },
+    {
+      "number": 188,
+      "text": "        return Template(template, undefined=StrictUndefined).render(**self.get_template_vars())"
+    },
+    {
+      "number": 189,
+      "text": ""
+    },
+    {
+      "number": 190,
+      "text": "    def _plan_md_message(self) -> dict[str, Any] | None:"
+    },
+    {
+      "number": 191,
+      "text": "        workspace_dir = self.get_template_vars().get(\"workspace_dir\")"
+    },
+    {
+      "number": 192,
+      "text": "        if not workspace_dir:"
+    },
+    {
+      "number": 193,
+      "text": "            return None"
+    },
+    {
+      "number": 194,
+      "text": "        plan_path = Path(workspace_dir) / \"plan.md\""
+    },
+    {
+      "number": 195,
+      "text": "        if not plan_path.exists() or not plan_path.is_file():"
+    },
+    {
+      "number": 196,
+      "text": "            return None"
+    },
+    {
+      "number": 197,
+      "text": "        plan_text = plan_path.read_text(encoding=\"utf-8\").strip()"
+    },
+    {
+      "number": 198,
+      "text": "        if not plan_text:"
+    },
+    {
+      "number": 199,
+      "text": "            return None"
+    },
+    {
+      "number": 200,
+      "text": "        return self.model.format_message(role=\"user\", content=f\"Current plan.md:\\n\\n{plan_text}\")"
+    },
+    {
+      "number": 201,
+      "text": ""
+    },
+    {
+      "number": 202,
+      "text": "    def _self_reflection_gate_error(self) -> str | None:"
+    },
+    {
+      "number": 203,
+      "text": "        \"\"\"Return an error string if done=true should be blocked pending judge success.\"\"\""
+    },
+    {
+      "number": 204,
+      "text": "        if not self.config.require_self_reflection_success:"
+    },
+    {
+      "number": 205,
+      "text": "            return None"
+    },
+    {
+      "number": 206,
+      "text": "        return self._tool_gate_error()"
+    },
+    {
+      "number": 207,
+      "text": ""
+    },
+    {
+      "number": 208,
+      "text": "    def _tool_gate_error(self) -> str | None:"
+    },
+    {
+      "number": 209,
+      "text": "        \"\"\"Require final_runs/run_<latest>/self_reflect_result.json with predicted_label == 1.\"\"\""
+    },
+    {
+      "number": 210,
+      "text": "        workspace_dir = self.get_template_vars().get(\"workspace_dir\")"
+    },
+    {
+      "number": 211,
+      "text": "        if not workspace_dir:"
+    },
+    {
+      "number": 212,
+      "text": "            return ("
+    },
+    {
+      "number": 213,
+      "text": "                \"Completion blocked: require_self_reflection_success is enabled but no workspace_dir is \""
+    },
+    {
+      "number": 214,
+      "text": "                \"available. Cannot locate final_runs/run_<id>/self_reflect_result.json. Do not set done=true.\""
+    },
+    {
+      "number": 215,
+      "text": "            )"
+    },
+    {
+      "number": 216,
+      "text": "        final_runs_dir = Path(workspace_dir) / \"final_runs\""
+    },
+    {
+      "number": 217,
+      "text": "        if not final_runs_dir.is_dir():"
+    },
+    {
+      "number": 218,
+      "text": "            return ("
+    },
+    {
+      "number": 219,
+      "text": "                \"Completion blocked: no final_runs/ directory exists yet. You must run final_script.py \""
+    },
+    {
+      "number": 220,
+      "text": "                \"in a final_runs/run_<id>/ folder and then run \""
+    },
+    {
+      "number": 221,
+      "text": "                \"`python -m webwright.tools.self_reflection --config self_reflect_config.json \""
+    },
+    {
+      "number": 222,
+      "text": "                \"--workspace-dir \\\"{0}\\\" --output final_runs/run_<id>/self_reflect_result.json` with \""
+    },
+    {
+      "number": 223,
+      "text": "                \"predicted_label == 1 before setting done=true.\""
+    },
+    {
+      "number": 224,
+      "text": "            ).format(workspace_dir)"
+    },
+    {
+      "number": 225,
+      "text": "        run_dirs: list[tuple[int, Path]] = []"
+    },
+    {
+      "number": 226,
+      "text": "        for entry in final_runs_dir.iterdir():"
+    },
+    {
+      "number": 227,
+      "text": "            if not entry.is_dir() or not entry.name.startswith(\"run_\"):"
+    },
+    {
+      "number": 228,
+      "text": "                continue"
+    },
+    {
+      "number": 229,
+      "text": "            suffix = entry.name[len(\"run_\"):]"
+    },
+    {
+      "number": 230,
+      "text": "            try:"
+    },
+    {
+      "number": 231,
+      "text": "                run_id = int(suffix)"
+    },
+    {
+      "number": 232,
+      "text": "            except ValueError:"
+    },
+    {
+      "number": 233,
+      "text": "                continue"
+    },
+    {
+      "number": 234,
+      "text": "            run_dirs.append((run_id, entry))"
+    },
+    {
+      "number": 235,
+      "text": "        if not run_dirs:"
+    },
+    {
+      "number": 236,
+      "text": "            return ("
+    },
+    {
+      "number": 237,
+      "text": "                \"Completion blocked: final_runs/ contains no run_<id>/ folders. Create \""
+    },
+    {
+      "number": 238,
+      "text": "                \"final_runs/run_<id>/, execute final_script.py there, then run self_reflection and \""
+    },
+    {
+      "number": 239,
+      "text": "                \"only set done=true after self_reflect_result.json reports predicted_label == 1.\""
+    },
+    {
+      "number": 240,
+      "text": "            )"
+    },
+    {
+      "number": 241,
+      "text": "        run_dirs.sort(key=lambda item: item[0])"
+    },
+    {
+      "number": 242,
+      "text": "        latest_run_id, latest_run_dir = run_dirs[-1]"
+    },
+    {
+      "number": 243,
+      "text": "        judge_path = latest_run_dir / \"self_reflect_result.json\""
+    },
+    {
+      "number": 244,
+      "text": "        if not judge_path.is_file():"
+    },
+    {
+      "number": 245,
+      "text": "            return ("
+    },
+    {
+      "number": 246,
+      "text": "                f\"Completion blocked: {judge_path} does not exist. Run \""
+    },
+    {
+      "number": 247,
+      "text": "                f\"`python -m webwright.tools.self_reflection --config self_reflect_config.json \""
+    },
+    {
+      "number": 248,
+      "text": "                f\"--workspace-dir \\\"{workspace_dir}\\\" --output {judge_path}` against the latest run \""
+    },
+    {
+      "number": 249,
+      "text": "                f\"(run_{latest_run_id}) and only set done=true after it exits 0 with \""
+    },
+    {
+      "number": 250,
+      "text": "                f\"predicted_label == 1.\""
+    },
+    {
+      "number": 251,
+      "text": "            )"
+    },
+    {
+      "number": 252,
+      "text": "        try:"
+    },
+    {
+      "number": 253,
+      "text": "            judge_data = json.loads(judge_path.read_text(encoding=\"utf-8\"))"
+    },
+    {
+      "number": 254,
+      "text": "        except (OSError, json.JSONDecodeError) as exc:"
+    },
+    {
+      "number": 255,
+      "text": "            return ("
+    },
+    {
+      "number": 256,
+      "text": "                f\"Completion blocked: could not parse {judge_path}: {exc}. Re-run self_reflection \""
+    },
+    {
+      "number": 257,
+      "text": "                f\"against run_{latest_run_id} and only set done=true after predicted_label == 1.\""
+    },
+    {
+      "number": 258,
+      "text": "            )"
+    },
+    {
+      "number": 259,
+      "text": "        predicted_label = judge_data.get(\"predicted_label\")"
+    },
+    {
+      "number": 260,
+      "text": "        if predicted_label != 1:"
+    },
+    {
+      "number": 261,
+      "text": "            return ("
+    },
+    {
+      "number": 262,
+      "text": "                f\"Completion blocked: {judge_path} has predicted_label={predicted_label!r} \""
+    },
+    {
+      "number": 263,
+      "text": "                f\"(expected 1). Diagnose the failure from self_reflect_result.json, fix final_script.py, \""
+    },
+    {
+      "number": 264,
+      "text": "                f\"re-run it in a new final_runs/run_{latest_run_id + 1}/ folder, and re-run \""
+    },
+    {
+      "number": 265,
+      "text": "                f\"self_reflection. Only set done=true after self_reflection exits 0 with \""
+    },
+    {
+      "number": 266,
+      "text": "                f\"predicted_label == 1.\""
+    },
+    {
+      "number": 267,
+      "text": "            )"
+    },
+    {
+      "number": 268,
+      "text": "        return None"
+    },
+    {
+      "number": 269,
+      "text": ""
+    },
+    {
+      "number": 270,
+      "text": "    def add_messages(self, *messages: dict[str, Any]) -> list[dict[str, Any]]:"
+    },
+    {
+      "number": 271,
+      "text": "        self.messages.extend(messages)"
+    },
+    {
+      "number": 272,
+      "text": "        self._prune_old_observation_aria_snapshots()"
+    },
+    {
+      "number": 273,
+      "text": "        return list(messages)"
+    },
+    {
+      "number": 274,
+      "text": ""
+    },
+    {
+      "number": 275,
+      "text": "    def _prune_old_observation_aria_snapshots(self) -> None:"
+    },
+    {
+      "number": 276,
+      "text": "        n = self.config.keep_last_n_observations"
+    },
+    {
+      "number": 277,
+      "text": "        if n <= 0:"
+    },
+    {
+      "number": 278,
+      "text": "            return"
+    },
+    {
+      "number": 279,
+      "text": "        obs_indices = ["
+    },
+    {
+      "number": 280,
+      "text": "            i for i, m in enumerate(self.messages)"
+    },
+    {
+      "number": 281,
+      "text": "            if m.get(\"extra\", {}).get(\"observation\")"
+    },
+    {
+      "number": 282,
+      "text": "        ]"
+    },
+    {
+      "number": 283,
+      "text": "        if len(obs_indices) <= n:"
+    },
+    {
+      "number": 284,
+      "text": "            return"
+    },
+    {
+      "number": 285,
+      "text": "        placeholder = \"(ARIA snapshot pruned; see most recent observation)\""
+    },
+    {
+      "number": 286,
+      "text": "        for idx in obs_indices[:-n]:"
+    },
+    {
+      "number": 287,
+      "text": "            msg = self.messages[idx]"
+    },
+    {
+      "number": 288,
+      "text": "            obs = msg[\"extra\"][\"observation\"]"
+    },
+    {
+      "number": 289,
+      "text": "            aria = obs.get(\"aria_snapshot\", \"\")"
+    },
+    {
+      "number": 290,
+      "text": "            if not aria:"
+    },
+    {
+      "number": 291,
+      "text": "                continue"
+    },
+    {
+      "number": 292,
+      "text": "            content = msg.get(\"content\")"
+    },
+    {
+      "number": 293,
+      "text": "            if isinstance(content, list):"
+    },
+    {
+      "number": 294,
+      "text": "                for part in content:"
+    },
+    {
+      "number": 295,
+      "text": "                    if isinstance(part, dict) and part.get(\"type\") in (\"text\", \"input_text\"):"
+    },
+    {
+      "number": 296,
+      "text": "                        text = part.get(\"text\", \"\")"
+    },
+    {
+      "number": 297,
+      "text": "                        if aria in text:"
+    },
+    {
+      "number": 298,
+      "text": "                            part[\"text\"] = text.replace(aria, placeholder)"
+    },
+    {
+      "number": 299,
+      "text": "            elif isinstance(content, str) and aria in content:"
+    },
+    {
+      "number": 300,
+      "text": "                msg[\"content\"] = content.replace(aria, placeholder)"
+    },
+    {
+      "number": 301,
+      "text": "            obs[\"aria_snapshot\"] = \"\""
+    },
+    {
+      "number": 302,
+      "text": ""
+    },
+    {
+      "number": 303,
+      "text": "    def _compact_history(self) -> None:"
+    },
+    {
+      "number": 304,
+      "text": "        \"\"\"Summarize the running transcript via an LLM call and reset messages to [system, summary]."
+    },
+    {
+      "number": 305,
+      "text": ""
+    },
+    {
+      "number": 306,
+      "text": "        Preserves the original system message. Replaces every non-system message with a single user"
+    },
+    {
+      "number": 307,
+      "text": "        message containing the summary. The summarization call is made with the current messages"
+    },
+    {
+      "number": 308,
+      "text": "        plus a user prompt instructing the model to produce a complete compact summary."
+    },
+    {
+      "number": 309,
+      "text": "        \"\"\""
+    },
+    {
+      "number": 310,
+      "text": "        if not self.messages:"
+    },
+    {
+      "number": 311,
+      "text": "            return"
+    },
+    {
+      "number": 312,
+      "text": "        system_message = next((m for m in self.messages if m.get(\"role\") == \"system\"), None)"
+    },
+    {
+      "number": 313,
+      "text": "        if system_message is None:"
+    },
+    {
+      "number": 314,
+      "text": "            return"
+    },
+    {
+      "number": 315,
+      "text": "        summary_request = self.model.format_message("
+    },
+    {
+      "number": 316,
+      "text": "            role=\"user\","
+    },
+    {
+      "number": 317,
+      "text": "            content=self.config.summary_user_prompt,"
+    },
+    {
+      "number": 318,
+      "text": "            extra={\"interrupt_type\": \"HistoryCompactionRequest\"},"
+    },
+    {
+      "number": 319,
+      "text": "        )"
+    },
+    {
+      "number": 320,
+      "text": "        summary_messages = list(self.messages) + [summary_request]"
+    },
+    {
+      "number": 321,
+      "text": "        try:"
+    },
+    {
+      "number": 322,
+      "text": "            response = self.model.query(summary_messages)"
+    },
+    {
+      "number": 323,
+      "text": "        except Exception:  # noqa: BLE001 - never fail the run due to compaction"
+    },
+    {
+      "number": 324,
+      "text": "            return"
+    },
+    {
+      "number": 325,
+      "text": "        summary_text = (response.get(\"content\") or \"\").strip()"
+    },
+    {
+      "number": 326,
+      "text": "        if not summary_text:"
+    },
+    {
+      "number": 327,
+      "text": "            extra = response.get(\"extra\", {})"
+    },
+    {
+      "number": 328,
+      "text": "            summary_text = (extra.get(\"final_response\") or \"\").strip() or \"(empty summary)\""
+    },
+    {
+      "number": 329,
+      "text": "        summary_message = self.model.format_message("
+    },
+    {
+      "number": 330,
+      "text": "            role=\"user\","
+    },
+    {
+      "number": 331,
+      "text": "            content=("
+    },
+    {
+      "number": 332,
+      "text": "                \"## Compacted History Summary\\n\""
+    },
+    {
+      "number": 333,
+      "text": "                f\"(context was compacted after step {self.n_calls}; earlier turns have been replaced \""
+    },
+    {
+      "number": 334,
+      "text": "                \"by the summary below)\\n\\n\""
+    },
+    {
+      "number": 335,
+      "text": "                f\"{summary_text}\\n\\n## End of Compacted Summary\""
+    },
+    {
+      "number": 336,
+      "text": "            ),"
+    },
+    {
+      "number": 337,
+      "text": "            extra={\"interrupt_type\": \"HistoryCompactionSummary\"},"
+    },
+    {
+      "number": 338,
+      "text": "        )"
+    },
+    {
+      "number": 339,
+      "text": "        self.messages = [system_message, summary_message]"
+    },
+    {
+      "number": 340,
+      "text": ""
+    },
+    {
+      "number": 341,
+      "text": "    def run(self, task: str = \"\", **kwargs) -> dict[str, Any]:"
+    },
+    {
+      "number": 342,
+      "text": "        self.extra_template_vars |= {\"task\": task, **kwargs}"
+    },
+    {
+      "number": 343,
+      "text": "        self.messages = []"
+    },
+    {
+      "number": 344,
+      "text": "        self.n_calls = 0"
+    },
+    {
+      "number": 345,
+      "text": "        self.n_format_errors = 0"
+    },
+    {
+      "number": 346,
+      "text": "        self.add_messages("
+    },
+    {
+      "number": 347,
+      "text": "            self.model.format_message(role=\"system\", content=self._render_template(self.config.system_template)),"
+    },
+    {
+      "number": 348,
+      "text": "            self.model.format_message(role=\"user\", content=self._render_template(self.config.instance_template)),"
+    },
+    {
+      "number": 349,
+      "text": "        )"
+    },
+    {
+      "number": 350,
+      "text": "        if self.extra_template_vars.get(\"explore_history\"):"
+    },
+    {
+      "number": 351,
+      "text": "            self.add_messages("
+    },
+    {
+      "number": 352,
+      "text": "                self.model.format_message("
+    },
+    {
+      "number": 353,
+      "text": "                    role=\"user\","
+    },
+    {
+      "number": 354,
+      "text": "                    content=\"## Previous Explore History\\n\""
+    },
+    {
+      "number": 355,
+      "text": "                    \"Below is the message log from a prior live-browser exploration of this exact task.\\n\""
+    },
+    {
+      "number": 356,
+      "text": "                    \"Use it to understand the site layout, available controls, aria snapshots, and pitfalls.\\n\""
+    },
+    {
+      "number": 357,
+      "text": "                    \"Do NOT repeat failed approaches. Build on what was learned.\\n\\n\""
+    },
+    {
+      "number": 358,
+      "text": "                    + self.extra_template_vars[\"explore_history\"]"
+    },
+    {
+      "number": 359,
+      "text": "                    + \"\\n\\n## End of Explore History\","
+    },
+    {
+      "number": 360,
+      "text": "                ),"
+    },
+    {
+      "number": 361,
+      "text": "            )"
+    },
+    {
+      "number": 362,
+      "text": ""
+    },
+    {
+      "number": 363,
+      "text": "        while True:"
+    },
+    {
+      "number": 364,
+      "text": "            try:"
+    },
+    {
+      "number": 365,
+      "text": "                self.step()"
+    },
+    {
+      "number": 366,
+      "text": "            except InterruptAgentFlow as exc:"
+    },
+    {
+      "number": 367,
+      "text": "                if isinstance(exc, FormatError):"
+    },
+    {
+      "number": 368,
+      "text": "                    self.n_format_errors += 1"
+    },
+    {
+      "number": 369,
+      "text": "                self.add_messages(*exc.messages)"
+    },
+    {
+      "number": 370,
+      "text": "            finally:"
+    },
+    {
+      "number": 371,
+      "text": "                self.save(self.config.output_path)"
+    },
+    {
+      "number": 372,
+      "text": "            if self.messages[-1].get(\"role\") == \"exit\":"
+    },
+    {
+      "number": 373,
+      "text": "                break"
+    },
+    {
+      "number": 374,
+      "text": "            if ("
+    },
+    {
+      "number": 375,
+      "text": "                self.config.summary_every_n_steps > 0"
+    },
+    {
+      "number": 376,
+      "text": "                and self.n_calls > 0"
+    },
+    {
+      "number": 377,
+      "text": "                and self.n_calls % self.config.summary_every_n_steps == 0"
+    },
+    {
+      "number": 378,
+      "text": "            ):"
+    },
+    {
+      "number": 379,
+      "text": "                self._compact_history()"
+    },
+    {
+      "number": 380,
+      "text": "                self.save(self.config.output_path)"
+    },
+    {
+      "number": 381,
+      "text": "        return self.messages[-1].get(\"extra\", {})"
+    },
+    {
+      "number": 382,
+      "text": ""
+    },
+    {
+      "number": 383,
+      "text": "    def step(self) -> list[dict[str, Any]]:"
+    },
+    {
+      "number": 384,
+      "text": "        return self.execute_actions(self.query())"
+    },
+    {
+      "number": 385,
+      "text": ""
+    },
+    {
+      "number": 386,
+      "text": "    def query(self) -> dict[str, Any]:"
+    },
+    {
+      "number": 387,
+      "text": "        if 0 < self.config.step_limit <= self.n_calls:"
+    },
+    {
+      "number": 388,
+      "text": "            raise LimitsExceeded("
+    },
+    {
+      "number": 389,
+      "text": "                self.model.format_message("
+    },
+    {
+      "number": 390,
+      "text": "                    role=\"exit\","
+    },
+    {
+      "number": 391,
+      "text": "                    content=\"Step limit exceeded.\","
+    },
+    {
+      "number": 392,
+      "text": "                    extra={\"exit_status\": \"LimitsExceeded\", \"submission\": \"\"},"
+    },
+    {
+      "number": 393,
+      "text": "                )"
+    },
+    {
+      "number": 394,
+      "text": "            )"
+    },
+    {
+      "number": 395,
+      "text": "        message = self.model.query(self.messages)"
+    },
+    {
+      "number": 396,
+      "text": "        self.n_calls += 1"
+    },
+    {
+      "number": 397,
+      "text": "        self.add_messages(message)"
+    },
+    {
+      "number": 398,
+      "text": "        return message"
+    },
+    {
+      "number": 399,
+      "text": ""
+    },
+    {
+      "number": 400,
+      "text": "    def execute_actions(self, message: dict[str, Any]) -> list[dict[str, Any]]:"
+    },
+    {
+      "number": 401,
+      "text": "        extra = message.get(\"extra\", {})"
+    },
+    {
+      "number": 402,
+      "text": "        if extra.get(\"done\"):"
+    },
+    {
+      "number": 403,
+      "text": "            gate_error = self._self_reflection_gate_error()"
+    },
+    {
+      "number": 404,
+      "text": "            if gate_error is not None:"
+    },
+    {
+      "number": 405,
+      "text": "                extra[\"done\"] = False"
+    },
+    {
+      "number": 406,
+      "text": "                return self.add_messages("
+    },
+    {
+      "number": 407,
+      "text": "                    self.model.format_message("
+    },
+    {
+      "number": 408,
+      "text": "                        role=\"user\","
+    },
+    {
+      "number": 409,
+      "text": "                        content=gate_error,"
+    },
+    {
+      "number": 410,
+      "text": "                        extra={\"interrupt_type\": \"SelfReflectionGate\"},"
+    },
+    {
+      "number": 411,
+      "text": "                    )"
+    },
+    {
+      "number": 412,
+      "text": "                )"
+    },
+    {
+      "number": 413,
+      "text": "            self._write_debug_step_artifact(step_index=self.n_calls, assistant_message=message, outputs=[])"
+    },
+    {
+      "number": 414,
+      "text": "            return self.add_messages("
+    },
+    {
+      "number": 415,
+      "text": "                self.model.format_message("
+    },
+    {
+      "number": 416,
+      "text": "                    role=\"exit\","
+    },
+    {
+      "number": 417,
+      "text": "                    content=extra.get(\"final_response\", \"Task completed.\"),"
+    },
+    {
+      "number": 418,
+      "text": "                    extra={"
+    },
+    {
+      "number": 419,
+      "text": "                        \"exit_status\": \"Submitted\","
+    },
+    {
+      "number": 420,
+      "text": "                        \"submission\": extra.get(\"final_response\", \"\"),"
+    },
+    {
+      "number": 421,
+      "text": "                        \"final_response\": extra.get(\"final_response\", \"\"),"
+    },
+    {
+      "number": 422,
+      "text": "                    },"
+    },
+    {
+      "number": 423,
+      "text": "                )"
+    },
+    {
+      "number": 424,
+      "text": "            )"
+    },
+    {
+      "number": 425,
+      "text": "        outputs = [self.env.execute(action) for action in extra.get(\"actions\", [])]"
+    },
+    {
+      "number": 426,
+      "text": "        self._write_debug_step_artifact(step_index=self.n_calls, assistant_message=message, outputs=outputs)"
+    },
+    {
+      "number": 427,
+      "text": "        observation_messages = self.model.format_observation_messages(message, outputs, self.get_template_vars())"
+    },
+    {
+      "number": 428,
+      "text": "        if self.config.attach_instance_template_after_observation:"
+    },
+    {
+      "number": 429,
+      "text": "            observation_messages.append("
+    },
+    {
+      "number": 430,
+      "text": "                self.model.format_message(role=\"user\", content=self._render_template(self.config.instance_template))"
+    },
+    {
+      "number": 431,
+      "text": "            )"
+    },
+    {
+      "number": 432,
+      "text": "        if self.config.attach_plan_md_after_observation:"
+    },
+    {
+      "number": 433,
+      "text": "            plan_message = self._plan_md_message()"
+    },
+    {
+      "number": 434,
+      "text": "            if plan_message is not None:"
+    },
+    {
+      "number": 435,
+      "text": "                observation_messages.append(plan_message)"
+    },
+    {
+      "number": 436,
+      "text": "        return self.add_messages(*observation_messages)"
+    },
+    {
+      "number": 437,
+      "text": ""
+    },
+    {
+      "number": 438,
+      "text": "    def serialize(self, *extra_dicts) -> dict[str, Any]:"
+    },
+    {
+      "number": 439,
+      "text": "        last_message = self.messages[-1] if self.messages else {}"
+    },
+    {
+      "number": 440,
+      "text": "        last_extra = last_message.get(\"extra\", {})"
+    },
+    {
+      "number": 441,
+      "text": "        return recursive_merge("
+    },
+    {
+      "number": 442,
+      "text": "            {"
+    },
+    {
+      "number": 443,
+      "text": "                \"info\": {"
+    },
+    {
+      "number": 444,
+      "text": "                    \"config\": {"
+    },
+    {
+      "number": 445,
+      "text": "                        \"agent\": self.config.model_dump(mode=\"json\"),"
+    },
+    {
+      "number": 446,
+      "text": "                        \"agent_type\": f\"{self.__class__.__module__}.{self.__class__.__name__}\","
+    },
+    {
+      "number": 447,
+      "text": "                    },"
+    },
+    {
+      "number": 448,
+      "text": "                    \"mini_version\": __version__,"
+    },
+    {
+      "number": 449,
+      "text": "                    \"exit_status\": last_extra.get(\"exit_status\", \"\"),"
+    },
+    {
+      "number": 450,
+      "text": "                    \"submission\": last_extra.get(\"submission\", \"\"),"
+    },
+    {
+      "number": 451,
+      "text": "                    \"api_calls\": self.n_calls,"
+    },
+    {
+      "number": 452,
+      "text": "                    \"format_errors\": self.n_format_errors,"
+    },
+    {
+      "number": 453,
+      "text": "                },"
+    },
+    {
+      "number": 454,
+      "text": "                \"messages\": [_sanitize_message_for_disk(message) for message in self.messages],"
+    },
+    {
+      "number": 455,
+      "text": "                \"trajectory_format\": \"webwright-0.1\","
+    },
+    {
+      "number": 456,
+      "text": "            },"
+    },
+    {
+      "number": 457,
+      "text": "            self.model.serialize(),"
+    },
+    {
+      "number": 458,
+      "text": "            self.env.serialize(),"
+    },
+    {
+      "number": 459,
+      "text": "            *extra_dicts,"
+    },
+    {
+      "number": 460,
+      "text": "        )"
+    },
+    {
+      "number": 461,
+      "text": ""
+    },
+    {
+      "number": 462,
+      "text": "    def save(self, path: Path | None, *extra_dicts) -> dict[str, Any]:"
+    },
+    {
+      "number": 463,
+      "text": "        data = self.serialize(*extra_dicts)"
+    },
+    {
+      "number": 464,
+      "text": "        if path is not None:"
+    },
+    {
+      "number": 465,
+      "text": "            path.parent.mkdir(parents=True, exist_ok=True)"
+    },
+    {
+      "number": 466,
+      "text": "            path.write_text(json.dumps(data, indent=2))"
+    },
+    {
+      "number": 467,
+      "text": "        return data"
+    }
+  ],
+  "error": null
+}

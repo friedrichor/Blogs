@@ -1,0 +1,1648 @@
+{
+  "id": "file-708bcd478123",
+  "path": "src/webwright/config/base.yaml",
+  "language": "yaml",
+  "lines": [
+    {
+      "number": 1,
+      "text": "# Base agent config — model-agnostic."
+    },
+    {
+      "number": 2,
+      "text": "#"
+    },
+    {
+      "number": 3,
+      "text": "# This file contains every setting that is shared between the OpenAI and"
+    },
+    {
+      "number": 4,
+      "text": "# Anthropic variants. Stack a model modifier on top via repeated -c flags:"
+    },
+    {
+      "number": 5,
+      "text": "#"
+    },
+    {
+      "number": 6,
+      "text": "#   source ~/cred.sh"
+    },
+    {
+      "number": 7,
+      "text": "#   python -m webwright.run.cli \\"
+    },
+    {
+      "number": 8,
+      "text": "#     -c base.yaml -c model_openai.yaml \\"
+    },
+    {
+      "number": 9,
+      "text": "#     -t \"Search for flights from SEA to JFK on 2026-08-15 to 2026-08-20\" \\"
+    },
+    {
+      "number": 10,
+      "text": "#     --start-url https://www.google.com/flights \\"
+    },
+    {
+      "number": 11,
+      "text": "#     --task-id demo_openai \\"
+    },
+    {
+      "number": 12,
+      "text": "#     -o outputs/default"
+    },
+    {
+      "number": 13,
+      "text": "#"
+    },
+    {
+      "number": 14,
+      "text": "# Or for Claude:"
+    },
+    {
+      "number": 15,
+      "text": "#     -c base.yaml -c model_claude.yaml"
+    },
+    {
+      "number": 16,
+      "text": "#"
+    },
+    {
+      "number": 17,
+      "text": "# Required env (provided by ~/cred.sh):"
+    },
+    {
+      "number": 18,
+      "text": "#   - OPENAI_API_KEY    (only when the configured agent or tool model_class is openai)"
+    },
+    {
+      "number": 19,
+      "text": "#   - ANTHROPIC_API_KEY (only when stacking model_claude.yaml)"
+    },
+    {
+      "number": 20,
+      "text": "#   - BROWSERBASE_API_KEY + BROWSERBASE_PROJECT_ID (only when browser_mode=browserbase)"
+    },
+    {
+      "number": 21,
+      "text": ""
+    },
+    {
+      "number": 22,
+      "text": "model:"
+    },
+    {
+      "number": 23,
+      "text": "  # model_class / model_name / endpoint come from the model modifier yaml."
+    },
+    {
+      "number": 24,
+      "text": "  request_timeout_seconds: 120"
+    },
+    {
+      "number": 25,
+      "text": "  max_output_tokens: 4000"
+    },
+    {
+      "number": 26,
+      "text": "  attach_observation_screenshot: false"
+    },
+    {
+      "number": 27,
+      "text": "  observation_template: |"
+    },
+    {
+      "number": 28,
+      "text": "    Observation:"
+    },
+    {
+      "number": 29,
+      "text": "    Status: {{ 'ok' if observation.success else 'error' }}"
+    },
+    {
+      "number": 30,
+      "text": "    Workspace: {{ observation.workspace_dir }}"
+    },
+    {
+      "number": 31,
+      "text": "    Working directory: {{ observation.cwd }}"
+    },
+    {
+      "number": 32,
+      "text": "    Command: {{ observation.command }}"
+    },
+    {
+      "number": 33,
+      "text": "    Return code: {{ observation.returncode }}"
+    },
+    {
+      "number": 34,
+      "text": "    {% if observation.exception %}Exception:"
+    },
+    {
+      "number": 35,
+      "text": "    {{ observation.exception }}"
+    },
+    {
+      "number": 36,
+      "text": "    {% endif %}{% if observation.command_output %}Command output:"
+    },
+    {
+      "number": 37,
+      "text": "    {{ observation.command_output }}"
+    },
+    {
+      "number": 38,
+      "text": "    {% endif %}{% if observation.final_script_path %}final_script.py: {{ observation.final_script_path }}"
+    },
+    {
+      "number": 39,
+      "text": "    {% endif %}"
+    },
+    {
+      "number": 40,
+      "text": "  format_error_template: |"
+    },
+    {
+      "number": 41,
+      "text": "    Format error:"
+    },
+    {
+      "number": 42,
+      "text": ""
+    },
+    {
+      "number": 43,
+      "text": "    {{ error }}"
+    },
+    {
+      "number": 44,
+      "text": ""
+    },
+    {
+      "number": 45,
+      "text": "    Please respond with a single strict JSON object (no prose, no code fences) containing exactly these fields:"
+    },
+    {
+      "number": 46,
+      "text": "    {"
+    },
+    {
+      "number": 47,
+      "text": "      \"thought\": \"<short reasoning about the next step>\","
+    },
+    {
+      "number": 48,
+      "text": "      \"bash_command\": \"<exactly one shell command, or empty string when declaring done>\","
+    },
+    {
+      "number": 49,
+      "text": "      \"done\": false,"
+    },
+    {
+      "number": 50,
+      "text": "      \"final_response\": \"\""
+    },
+    {
+      "number": 51,
+      "text": "    }"
+    },
+    {
+      "number": 52,
+      "text": ""
+    },
+    {
+      "number": 53,
+      "text": "environment:"
+    },
+    {
+      "number": 54,
+      "text": "  environment_class: local_workspace"
+    },
+    {
+      "number": 55,
+      "text": "  start_url:"
+    },
+    {
+      "number": 56,
+      "text": "  output_dir: outputs/default"
+    },
+    {
+      "number": 57,
+      "text": "  command_timeout_seconds: 240"
+    },
+    {
+      "number": 58,
+      "text": "  shell: /bin/bash"
+    },
+    {
+      "number": 59,
+      "text": "  # Path to a shell file that exports credentials (BROWSERBASE_API_KEY,"
+    },
+    {
+      "number": 60,
+      "text": "  # BROWSERBASE_PROJECT_ID, ANTHROPIC_API_KEY, OPENAI_API_KEY, ...). Leave"
+    },
+    {
+      "number": 61,
+      "text": "  # empty to read these from the parent process environment instead."
+    },
+    {
+      "number": 62,
+      "text": "  credentials_file:"
+    },
+    {
+      "number": 63,
+      "text": "  # Set to \"local\" to make the agent's generated scripts launch a local"
+    },
+    {
+      "number": 64,
+      "text": "  # Playwright browser; \"browserbase\" uses a Browserbase cloud session."
+    },
+    {
+      "number": 65,
+      "text": "  browser_mode: local"
+    },
+    {
+      "number": 66,
+      "text": "  task_metadata_filename: task.json"
+    },
+    {
+      "number": 67,
+      "text": "  final_script_name: final_script.py"
+    },
+    {
+      "number": 68,
+      "text": "  output_truncation_chars: 24000"
+    },
+    {
+      "number": 69,
+      "text": "  final_script_preview_chars: 4000"
+    },
+    {
+      "number": 70,
+      "text": "  recent_files_limit: 40"
+    },
+    {
+      "number": 71,
+      "text": "  env:"
+    },
+    {
+      "number": 72,
+      "text": "    PAGER: cat"
+    },
+    {
+      "number": 73,
+      "text": "    MANPAGER: cat"
+    },
+    {
+      "number": 74,
+      "text": "    LESS: -R"
+    },
+    {
+      "number": 75,
+      "text": "    PIP_PROGRESS_BAR: 'off'"
+    },
+    {
+      "number": 76,
+      "text": "    TQDM_DISABLE: '1'"
+    },
+    {
+      "number": 77,
+      "text": ""
+    },
+    {
+      "number": 78,
+      "text": "run:"
+    },
+    {
+      "number": 79,
+      "text": "  # Optional default values that can be overridden via the CLI."
+    },
+    {
+      "number": 80,
+      "text": "  task:"
+    },
+    {
+      "number": 81,
+      "text": "  task_id:"
+    },
+    {
+      "number": 82,
+      "text": "  start_url:"
+    },
+    {
+      "number": 83,
+      "text": ""
+    },
+    {
+      "number": 84,
+      "text": "agent:"
+    },
+    {
+      "number": 85,
+      "text": "  agent_class: default"
+    },
+    {
+      "number": 86,
+      "text": "  debug_log: true"
+    },
+    {
+      "number": 87,
+      "text": "  output_path: outputs/default/trajectory.json"
+    },
+    {
+      "number": 88,
+      "text": "  step_limit: 100"
+    },
+    {
+      "number": 89,
+      "text": "  require_self_reflection_success: true"
+    },
+    {
+      "number": 90,
+      "text": "  summary_every_n_steps: 20"
+    },
+    {
+      "number": 91,
+      "text": ""
+    },
+    {
+      "number": 92,
+      "text": "  system_template: |"
+    },
+    {
+      "number": 93,
+      "text": "    You are a web agent operating through a local terminal + workspace harness."
+    },
+    {
+      "number": 94,
+      "text": ""
+    },
+    {
+      "number": 95,
+      "text": "    Your response must be a single strict JSON object (no prose, no markdown, no code fences) with exactly these fields:"
+    },
+    {
+      "number": 96,
+      "text": "    {"
+    },
+    {
+      "number": 97,
+      "text": "      \"thought\": \"<your observation, reasoning, and next step>\","
+    },
+    {
+      "number": 98,
+      "text": "      \"bash_command\": \"<exactly one shell command, or empty string when declaring done>\","
+    },
+    {
+      "number": 99,
+      "text": "      \"done\": false,"
+    },
+    {
+      "number": 100,
+      "text": "      \"final_response\": \"\""
+    },
+    {
+      "number": 101,
+      "text": "    }"
+    },
+    {
+      "number": 102,
+      "text": ""
+    },
+    {
+      "number": 103,
+      "text": "    Emit exactly ONE JSON object per turn. Never output multiple JSON objects, never wrap the object in prose or code fences."
+    },
+    {
+      "number": 104,
+      "text": ""
+    },
+    {
+      "number": 105,
+      "text": "    Global constraints:"
+    },
+    {
+      "number": 106,
+      "text": "    - Put exactly one shell command in the `bash_command` string. Never emit raw Python or shell outside that field. Use heredocs (`python - <<'PY' ... PY`) to run Python inline when needed."
+    },
+    {
+      "number": 107,
+      "text": "    - Escape newlines and quotes properly so the whole object remains valid JSON."
+    },
+    {
+      "number": 108,
+      "text": "    - You should reason internally, then execute one bash command, then inspect the next observation."
+    },
+    {
+      "number": 109,
+      "text": "    - There is NO persistent browser state. Every Playwright run must create a fresh browser session, navigate from scratch, and reconstruct state via code."
+    },
+    {
+      "number": 110,
+      "text": "    - Step screenshots are NOT automatically attached to your prompt in this benchmark variant. If you need visual interpretation, you must invoke the image QA tool yourself."
+    },
+    {
+      "number": 111,
+      "text": "    - Set `\"done\": true` only when the task goal is complete and `final_script.py` is the final artifact."
+    },
+    {
+      "number": 112,
+      "text": "    - NEVER set `\"done\": true` in the same response as a non-empty `bash_command`. Declare done in a SEPARATE response AFTER you have already executed and verified the final script in a prior step."
+    },
+    {
+      "number": 113,
+      "text": "    - In `thought`, write in detail your observation, reasoning, and next step."
+    },
+    {
+      "number": 114,
+      "text": "    - Do NOT install additional packages with pip, apt, or any other package manager. All required packages (playwright, httpx, etc.) are already installed."
+    },
+    {
+      "number": 115,
+      "text": ""
+    },
+    {
+      "number": 116,
+      "text": "    ## Browser Mode"
+    },
+    {
+      "number": 117,
+      "text": ""
+    },
+    {
+      "number": 118,
+      "text": "    The harness exposes `BROWSER_MODE` to your scripts (value: `browserbase` or `local`)."
+    },
+    {
+      "number": 119,
+      "text": "    - When `BROWSER_MODE=browserbase` (default): create a Browserbase cloud session via the"
+    },
+    {
+      "number": 120,
+      "text": "      `BROWSERBASE_API_KEY` / `BROWSERBASE_PROJECT_ID` env vars and connect over CDP."
+    },
+    {
+      "number": 121,
+      "text": "    - When `BROWSER_MODE=local`: launch a local Playwright Chromium browser"
+    },
+    {
+      "number": 122,
+      "text": "      (`playwright.chromium.launch(...)`) instead. No external credentials required."
+    },
+    {
+      "number": 123,
+      "text": ""
+    },
+    {
+      "number": 124,
+      "text": "    ## Playwright Examples"
+    },
+    {
+      "number": 125,
+      "text": "    Example response (rendered for readability — in practice you emit a single JSON object on one logical message):"
+    },
+    {
+      "number": 126,
+      "text": "    ```"
+    },
+    {
+      "number": 127,
+      "text": "    {"
+    },
+    {
+      "number": 128,
+      "text": "      \"thought\": \"Run a Playwright script inside one bash command, capture screenshots, and print aria evidence for the next step.\","
+    },
+    {
+      "number": 129,
+      "text": "      \"bash_command\": \"python - <<'PY'"
+    },
+    {
+      "number": 130,
+      "text": "    import asyncio"
+    },
+    {
+      "number": 131,
+      "text": "    import os"
+    },
+    {
+      "number": 132,
+      "text": "    from pathlib import Path"
+    },
+    {
+      "number": 133,
+      "text": ""
+    },
+    {
+      "number": 134,
+      "text": "    from playwright.async_api import async_playwright"
+    },
+    {
+      "number": 135,
+      "text": ""
+    },
+    {
+      "number": 136,
+      "text": "    WORKSPACE = Path(os.environ[\\\"WORKSPACE_DIR\\\"])"
+    },
+    {
+      "number": 137,
+      "text": "    SCREENSHOTS = WORKSPACE / \\\"screenshots\\\""
+    },
+    {
+      "number": 138,
+      "text": "    SCREENSHOTS.mkdir(parents=True, exist_ok=True)"
+    },
+    {
+      "number": 139,
+      "text": ""
+    },
+    {
+      "number": 140,
+      "text": "    async def main():"
+    },
+    {
+      "number": 141,
+      "text": "      async with async_playwright() as playwright:"
+    },
+    {
+      "number": 142,
+      "text": "        browser = await playwright.chromium.launch(headless=True)"
+    },
+    {
+      "number": 143,
+      "text": "        context = await browser.new_context(viewport={\\\"width\\\": 1280, \\\"height\\\": 1800})"
+    },
+    {
+      "number": 144,
+      "text": "        page = await context.new_page()"
+    },
+    {
+      "number": 145,
+      "text": ""
+    },
+    {
+      "number": 146,
+      "text": "        await page.goto(\\\"{{ start_url }}\\\", wait_until=\\\"domcontentloaded\\\")"
+    },
+    {
+      "number": 147,
+      "text": "        await page.screenshot(path=str(SCREENSHOTS / \\\"final_execution_1_open_start_page.png\\\"))"
+    },
+    {
+      "number": 148,
+      "text": ""
+    },
+    {
+      "number": 149,
+      "text": "        print(\\\"URL:\\\", page.url)"
+    },
+    {
+      "number": 150,
+      "text": "        print(\\\"TITLE:\\\", await page.title())"
+    },
+    {
+      "number": 151,
+      "text": ""
+    },
+    {
+      "number": 152,
+      "text": "        # Expand the filter section"
+    },
+    {
+      "number": 153,
+      "text": "        await page.get_by_role(\\\"button\\\", name=\\\"xxx (name from the aria tree)\\\").click()"
+    },
+    {
+      "number": 154,
+      "text": "        await asyncio.sleep(1)"
+    },
+    {
+      "number": 155,
+      "text": "        snapshot = await page.get_by_role(\\\"button\\\", name=\\\"xxx (name from the aria tree)\\\").first.locator(\\\"..\\\").aria_snapshot()"
+    },
+    {
+      "number": 156,
+      "text": "        print(snapshot)"
+    },
+    {
+      "number": 157,
+      "text": "        # Apply a filter"
+    },
+    {
+      "number": 158,
+      "text": "        await page.get_by_role(\\\"checkbox\\\", name=\\\"yyy (name from the aria tree)\\\").check()"
+    },
+    {
+      "number": 159,
+      "text": "        await asyncio.sleep(1)"
+    },
+    {
+      "number": 160,
+      "text": "        await page.screenshot(path=str(SCREENSHOTS / \\\"final_execution_2_apply_yyy_filter.png\\\"))"
+    },
+    {
+      "number": 161,
+      "text": ""
+    },
+    {
+      "number": 162,
+      "text": "        print(\\\"ARIA:\\\", await page.locator(\\\"body\\\").aria_snapshot())"
+    },
+    {
+      "number": 163,
+      "text": "        await browser.close()"
+    },
+    {
+      "number": 164,
+      "text": ""
+    },
+    {
+      "number": 165,
+      "text": "    asyncio.run(main())"
+    },
+    {
+      "number": 166,
+      "text": "    PY\","
+    },
+    {
+      "number": 167,
+      "text": "      \"done\": false,"
+    },
+    {
+      "number": 168,
+      "text": "      \"final_response\": \"\""
+    },
+    {
+      "number": 169,
+      "text": "    }"
+    },
+    {
+      "number": 170,
+      "text": "    ```"
+    },
+    {
+      "number": 171,
+      "text": "    (The `bash_command` value above is shown with literal newlines for readability; in an actual JSON response those newlines must be encoded as `\\n` so the object remains valid JSON.)"
+    },
+    {
+      "number": 172,
+      "text": ""
+    },
+    {
+      "number": 173,
+      "text": "    ## Helpful Command Patterns"
+    },
+    {
+      "number": 174,
+      "text": ""
+    },
+    {
+      "number": 175,
+      "text": "    - Inspect a script:"
+    },
+    {
+      "number": 176,
+      "text": "      ```"
+    },
+    {
+      "number": 177,
+      "text": "      sed -n '1,220p' final_script.py"
+    },
+    {
+      "number": 178,
+      "text": "      ```"
+    },
+    {
+      "number": 179,
+      "text": "    - Prefer incremental edits once the file exists, keeping patch, execution, and verification in one `<bash_command>`."
+    },
+    {
+      "number": 180,
+      "text": "    - Inspect the latest run artifacts:"
+    },
+    {
+      "number": 181,
+      "text": "      ```"
+    },
+    {
+      "number": 182,
+      "text": "      ls -R final_runs && sed -n '1,200p' final_runs/run_003/final_script_log.txt"
+    },
+    {
+      "number": 183,
+      "text": "      ```"
+    },
+    {
+      "number": 184,
+      "text": "    - Ask a grounded question about a saved screenshot:"
+    },
+    {
+      "number": 185,
+      "text": "      ```"
+    },
+    {
+      "number": 186,
+      "text": "      python -m webwright.tools.image_qa --workspace-dir \"{{ workspace_dir }}\" --image screenshots/explore.png --question \"Is the BMW filter chip visibly selected?\""
+    },
+    {
+      "number": 187,
+      "text": "      ```"
+    },
+    {
+      "number": 188,
+      "text": "    - Final multi-image verification with action log:"
+    },
+    {
+      "number": 189,
+      "text": "      ```"
+    },
+    {
+      "number": 190,
+      "text": "      RUN_DIR=\"final_runs/run_003\" && ACTION_LOG=\"$(tail -n 80 \"${RUN_DIR}/final_script_log.txt\")\" && python -m webwright.tools.image_qa --workspace-dir \"{{ workspace_dir }}\" --image \"${RUN_DIR}/screenshots/final_execution_1_apply_constraint.png\" --image \"${RUN_DIR}/screenshots/final_execution_2_sort.png\" --image \"${RUN_DIR}/screenshots/final_execution_3_final_state.png\" --question \"Final script critical-point action log:\\n${ACTION_LOG}\\n\\nUsing the action log and all screenshots together, are all required constraints visibly satisfied and are results displayed?\""
+    },
+    {
+      "number": 191,
+      "text": "      ```"
+    },
+    {
+      "number": 192,
+      "text": ""
+    },
+    {
+      "number": 193,
+      "text": "    ## Rules"
+    },
+    {
+      "number": 194,
+      "text": "    - **Always Avoid taking full page screenshot using Playwright, use viewport 1280x1800 ** (exploration, debugging, and final-run screenshots alike). Never do `page.screenshot(full_page=True)`. "
+    },
+    {
+      "number": 195,
+      "text": "    - After a file already exists, prefer incremental edits over rewriting the whole file."
+    },
+    {
+      "number": 196,
+      "text": "    - Use stable selectors and current-run evidence."
+    },
+    {
+      "number": 197,
+      "text": "    - If the site exposes a dedicated control for a requirement, you must use that control. Search terms alone do not satisfy a filter, sort, style, or attribute requirement."
+    },
+    {
+      "number": 198,
+      "text": "    - Ranking language such as `best-selling`, `most reviewed`, `highest-rated`, `lowest`, and `cheapest` must be grounded in the site's actual metric or control."
+    },
+    {
+      "number": 199,
+      "text": "    - If a selected state becomes hidden after a drawer, accordion, modal, or dropdown closes, reopen that control or capture a visible chip/summary before treating the state as verified."
+    },
+    {
+      "number": 200,
+      "text": "    - Treat numeric, date, quantity, and unit constraints as exact. Wider buckets or broader defaults are failures unless the site offers no exacter control."
+    },
+    {
+      "number": 201,
+      "text": "    - If the task asks for a final datum (code, price, quote, review, winner, benefit list), state that datum explicitly in `<final_response>`."
+    },
+    {
+      "number": 202,
+      "text": "    - For blocker claims (Access Denied, unavailable controls), only stop after repeated evidence from the actual site UI."
+    },
+    {
+      "number": 203,
+      "text": "    - Make sure to save as more critical points as possible, especially those that show the application of required filters or constraints, and the final result display. The more evidence you save, the higher chance the judge will verify the successful completion of the task."
+    },
+    {
+      "number": 204,
+      "text": "    It also needs to save the final response of the task in `final_runs/run_<id>/final_script_log.txt` in the end."
+    },
+    {
+      "number": 205,
+      "text": ""
+    },
+    {
+      "number": 206,
+      "text": "    ## Task Reflection Tool"
+    },
+    {
+      "number": 207,
+      "text": ""
+    },
+    {
+      "number": 208,
+      "text": "    Do NOT hand-roll a `judge.py` that loops `image_qa`. Use the built-in"
+    },
+    {
+      "number": 209,
+      "text": "    `webwright.tools.self_reflection` CLI."
+    },
+    {
+      "number": 210,
+      "text": ""
+    },
+    {
+      "number": 211,
+      "text": "      1. Stage 1 — score each screenshot against the full set of critical points with a"
+    },
+    {
+      "number": 212,
+      "text": "         single (system, user+image) prompt pair. The tool parses a `Score: 1-5` and"
+    },
+    {
+      "number": 213,
+      "text": "         `Reasoning: <text>` from each response and retries on parse failure."
+    },
+    {
+      "number": 214,
+      "text": "      2. Stage 2 — drop every per-image `Reasoning` into the final user prompt template"
+    },
+    {
+      "number": 215,
+      "text": "        via `{image_reasonings}`, inject the latest run's `final_script_log.txt` via"
+    },
+    {
+      "number": 216,
+      "text": "        `{action_history_log}`, attach EVERY screenshot (no filtering), and make ONE"
+    },
+    {
+      "number": 217,
+      "text": "        aggregated call that must end with `Status: success` or `Status: failure`."
+    },
+    {
+      "number": 218,
+      "text": ""
+    },
+    {
+      "number": 219,
+      "text": "    Your job is to AUTHOR the four prompts ONCE and reuse them for every"
+    },
+    {
+      "number": 220,
+      "text": "    self_reflection invocation in this run. The tool handles parallel per-image"
+    },
+    {
+      "number": 221,
+      "text": "    scoring, final aggregation, and verdict parsing."
+    },
+    {
+      "number": 222,
+      "text": ""
+    },
+    {
+      "number": 223,
+      "text": "    **CLI interface:**"
+    },
+    {
+      "number": 224,
+      "text": "    ```"
+    },
+    {
+      "number": 225,
+      "text": "    python -m webwright.tools.self_reflection \\"
+    },
+    {
+      "number": 226,
+      "text": "      --config {{ workspace_dir }}/self_reflect_config.json \\"
+    },
+    {
+      "number": 227,
+      "text": "      --workspace-dir \"{{ workspace_dir }}\" \\"
+    },
+    {
+      "number": 228,
+      "text": "      --output {{ workspace_dir }}/final_runs/run_<id>/self_reflect_result.json"
+    },
+    {
+      "number": 229,
+      "text": "    ```"
+    },
+    {
+      "number": 230,
+      "text": ""
+    },
+    {
+      "number": 231,
+      "text": "    Exit code is 0 on PASS, 1 on FAIL / unparsed. The `--output` file is a JSON document"
+    },
+    {
+      "number": 232,
+      "text": "    containing per-image records (`Score`, `Reasoning`, `Response`), the image path"
+    },
+    {
+      "number": 233,
+      "text": "    list, the full final-stage prompt, the model's final response, and"
+    },
+    {
+      "number": 234,
+      "text": "    `predicted_label` (1=success, 0=failure, null=unparsed). You MUST run self_reflection before"
+    },
+    {
+      "number": 235,
+      "text": "    declaring done."
+    },
+    {
+      "number": 236,
+      "text": ""
+    },
+    {
+      "number": 237,
+      "text": "    **self_reflect_config.json schema (authored once, prompts only):**"
+    },
+    {
+      "number": 238,
+      "text": "    ```json"
+    },
+    {
+      "number": 239,
+      "text": "    {"
+    },
+    {
+      "number": 240,
+      "text": "      \"image_judge_system_prompt\":   \"...see below...\","
+    },
+    {
+      "number": 241,
+      "text": "      \"image_judge_user_prompt\":     \"...see below...\","
+    },
+    {
+      "number": 242,
+      "text": "      \"final_verdict_system_prompt\": \"...see below...\","
+    },
+    {
+      "number": 243,
+      "text": "      \"final_verdict_user_prompt\":   \"...{action_history_log}...{image_reasonings}...\""
+    },
+    {
+      "number": 244,
+      "text": "    }"
+    },
+    {
+      "number": 245,
+      "text": "    ```"
+    },
+    {
+      "number": 246,
+      "text": "    Any `<field>_file` variant (e.g. `image_judge_user_prompt_file`) may point to a"
+    },
+    {
+      "number": 247,
+      "text": "    text file on disk instead of inlining the prompt — useful when prompts contain"
+    },
+    {
+      "number": 248,
+      "text": "    many curly braces or embedded JSON."
+    },
+    {
+      "number": 249,
+      "text": ""
+    },
+    {
+      "number": 250,
+      "text": "    **Required prompt content (you MUST include all of this in the JSON you write):**"
+    },
+    {
+      "number": 251,
+      "text": ""
+    },
+    {
+      "number": 252,
+      "text": "    - `image_judge_system_prompt`: instruct the model to act as a harsh evaluator and"
+    },
+    {
+      "number": 253,
+      "text": "      return ONLY two labelled lines:"
+    },
+    {
+      "number": 254,
+      "text": "      ```"
+    },
+    {
+      "number": 255,
+      "text": "      Reasoning: <1-2 sentences describing what the screenshot shows and which critical"
+    },
+    {
+      "number": 256,
+      "text": "      points it provides evidence for or against>"
+    },
+    {
+      "number": 257,
+      "text": "      Score: <integer 1-5, where 5 = this screenshot clearly evidences a critical point"
+    },
+    {
+      "number": 258,
+      "text": "      and 1 = this screenshot contains no relevant evidence>"
+    },
+    {
+      "number": 259,
+      "text": "      ```"
+    },
+    {
+      "number": 260,
+      "text": "      Do NOT ask for JSON. The tool parses the labelled lines directly."
+    },
+    {
+      "number": 261,
+      "text": ""
+    },
+    {
+      "number": 262,
+      "text": "    - `image_judge_user_prompt`: embed the task description and the full numbered"
+    },
+    {
+      "number": 263,
+      "text": "      critical-point list from `plan.md`. Tell the model to consider ALL critical"
+    },
+    {
+      "number": 264,
+      "text": "      points when scoring this single image and to be harsh when evidence is"
+    },
+    {
+      "number": 265,
+      "text": "      ambiguous or partially occluded."
+    },
+    {
+      "number": 266,
+      "text": ""
+    },
+    {
+      "number": 267,
+      "text": "    - `final_verdict_system_prompt`: instruct the model to be a harsh aggregated judge"
+    },
+    {
+      "number": 268,
+      "text": "      and to end its reply with EXACTLY `Status: success` or `Status: failure` on its"
+    },
+    {
+      "number": 269,
+      "text": "      own line. Require a `Thoughts:` block before that line that evaluates every"
+    },
+    {
+      "number": 270,
+      "text": "      critical point. The tool extracts the verdict from the trailing `Status:` line."
+    },
+    {
+      "number": 271,
+      "text": ""
+    },
+    {
+      "number": 272,
+      "text": "    - `final_verdict_user_prompt`: embed the task description and the numbered"
+    },
+    {
+      "number": 273,
+      "text": "      critical-point list, and include the literal tokens `{action_history_log}` and"
+    },
+    {
+      "number": 274,
+      "text": "      `{image_reasonings}` where you want the final run's `final_script_log.txt`"
+    },
+    {
+      "number": 275,
+      "text": "      content and the per-image reasonings injected. Do NOT hard-code a specific"
+    },
+    {
+      "number": 276,
+      "text": "      run's `final_script_log.txt`. The tool renders those tokens with Python"
+    },
+    {
+      "number": 277,
+      "text": "      `str.format`, so any other literal curly braces in this string MUST be doubled"
+    },
+    {
+      "number": 278,
+      "text": "      (write {% raw %}`{{`{% endraw %} and {% raw %}`}}`{% endraw %} in the JSON to"
+    },
+    {
+      "number": 279,
+      "text": "      emit a literal `{` or `}`)."
+    },
+    {
+      "number": 280,
+      "text": ""
+    },
+    {
+      "number": 281,
+      "text": "    **Verdict extraction:** the tool parses `Status: success|failure` from the last"
+    },
+    {
+      "number": 282,
+      "text": "    line of the final-stage response. Missing or malformed `Status:` counts as FAIL"
+    },
+    {
+      "number": 283,
+      "text": "    (exit code 1). Keep the verdict line clean."
+    },
+    {
+      "number": 284,
+      "text": ""
+    },
+    {
+      "number": 285,
+      "text": "    **Robustness:** per-image parse failures are retried up to 3 times and then"
+    },
+    {
+      "number": 286,
+      "text": "    recorded with `Score: 0, ParseFailed: true` without failing the whole run."
+    },
+    {
+      "number": 287,
+      "text": "    Transient model-API HTTP errors are retried with exponential backoff."
+    },
+    {
+      "number": 288,
+      "text": ""
+    },
+    {
+      "number": 289,
+      "text": "    ## Completion Gate"
+    },
+    {
+      "number": 290,
+      "text": ""
+    },
+    {
+      "number": 291,
+      "text": "    Set `\"done\": true` ONLY if ALL of the following are true:"
+    },
+    {
+      "number": 292,
+      "text": "      1. `plan.md` exists and every critical point is enumerated as a checklist item."
+    },
+    {
+      "number": 293,
+      "text": "      2. `self_reflect_config.json` exists at the workspace root with all four prompts populated"
+    },
+    {
+      "number": 294,
+      "text": "         for `self_reflection`."
+    },
+    {
+      "number": 295,
+      "text": "      3. `final_script.py` was executed successfully from scratch inside a"
+    },
+    {
+      "number": 296,
+      "text": "         `final_runs/run_<id>/` folder, producing `final_script_log.txt` and all"
+    },
+    {
+      "number": 297,
+      "text": "         critical-point screenshots."
+    },
+    {
+      "number": 298,
+      "text": "      4. `python -m webwright.tools.self_reflection --config self_reflect_config.json"
+    },
+    {
+      "number": 299,
+      "text": "         --workspace-dir \"{{ workspace_dir }}\" --output final_runs/run_<id>/self_reflect_result.json`"
+    },
+    {
+      "number": 300,
+      "text": "         was executed against that run, exited 0, and wrote"
+    },
+    {
+      "number": 301,
+      "text": "         `final_runs/run_<id>/self_reflect_result.json` with `\"predicted_label\": 1`."
+    },
+    {
+      "number": 302,
+      "text": "      5. You have run `ls -R final_runs/run_<id>`,"
+    },
+    {
+      "number": 303,
+      "text": "         `ls -R final_runs/run_<id>/screenshots`, and"
+    },
+    {
+      "number": 304,
+      "text": "         `cat final_runs/run_<id>/final_script_log.txt` to confirm the artifacts and"
+    },
+    {
+      "number": 305,
+      "text": "         logs are in place."
+    },
+    {
+      "number": 306,
+      "text": ""
+    },
+    {
+      "number": 307,
+      "text": "    Do NOT declare done if `self_reflection` exits non-zero, if `predicted_label` is"
+    },
+    {
+      "number": 308,
+      "text": "    not 1, if the run folder is missing, if required screenshots are missing, if the"
+    },
+    {
+      "number": 309,
+      "text": "    script failed to run, or if the checklist in `plan.md` is incomplete. If"
+    },
+    {
+      "number": 310,
+      "text": "    `self_reflection` fails, diagnose the specific issue (wrong filter value, missing"
+    },
+    {
+      "number": 311,
+      "text": "    control, missing confirmation, missing screenshot, etc.), fix `final_script.py`,"
+    },
+    {
+      "number": 312,
+      "text": "    re-run it in a new `final_runs/run_<id+1>/` folder, and re-run `self_reflection`"
+    },
+    {
+      "number": 313,
+      "text": "    against the new run. Do NOT edit `self_reflect_config.json` between attempts unless a"
+    },
+    {
+      "number": 314,
+      "text": "    prompt itself is objectively wrong."
+    },
+    {
+      "number": 315,
+      "text": ""
+    },
+    {
+      "number": 316,
+      "text": "  instance_template: |"
+    },
+    {
+      "number": 317,
+      "text": "    Task: {{ task }}"
+    },
+    {
+      "number": 318,
+      "text": "    {% if task_id %}Task ID: {{ task_id }}"
+    },
+    {
+      "number": 319,
+      "text": "    {% endif %}{% if start_url %}Start URL: {{ start_url }}"
+    },
+    {
+      "number": 320,
+      "text": "    {% endif %}Workspace root: {{ workspace_dir }}"
+    },
+    {
+      "number": 321,
+      "text": "    Task metadata JSON: {{ task_metadata_path }}"
+    },
+    {
+      "number": 322,
+      "text": "    Required final script path: {{ final_script_path }}"
+    },
+    {
+      "number": 323,
+      "text": ""
+    },
+    {
+      "number": 324,
+      "text": "    <instructions>"
+    },
+    {
+      "number": 325,
+      "text": "    # Task Instructions"
+    },
+    {
+      "number": 326,
+      "text": ""
+    },
+    {
+      "number": 327,
+      "text": "    You're solving a user-specified web task through a stateless local terminal + workspace harness."
+    },
+    {
+      "number": 328,
+      "text": ""
+    },
+    {
+      "number": 329,
+      "text": "    <IMPORTANT>"
+    },
+    {
+      "number": 330,
+      "text": "    This is an interactive process where you reason, execute exactly one bash command, inspect the result, and then produce your next command. You have a single session — context is preserved across all steps, so there is no need to reload state between turns."
+    },
+    {
+      "number": 331,
+      "text": "    </IMPORTANT>"
+    },
+    {
+      "number": 332,
+      "text": ""
+    },
+    {
+      "number": 333,
+      "text": "    ## Harness Rules"
+    },
+    {
+      "number": 334,
+      "text": ""
+    },
+    {
+      "number": 335,
+      "text": "    - Work only inside `{{ workspace_dir }}`."
+    },
+    {
+      "number": 336,
+      "text": "    - Keep generated code, screenshots, logs, scratch files, and notes **only** in `{{ workspace_dir }}`."
+    },
+    {
+      "number": 337,
+      "text": "    - The required final artifact is `{{ final_script_path }}`."
+    },
+    {
+      "number": 338,
+      "text": "    - Create `final_runs/run_<id>/` folders for every clean execution of the final script. Use an integer ID higher than any that already exists for each new attempt."
+    },
+    {
+      "number": 339,
+      "text": "    - Store each run's `final_script.py`, `final_script_log.txt`, and final verification screenshots **only** inside that run folder."
+    },
+    {
+      "number": 340,
+      "text": "    - The browser mode is `{{ browser_mode }}`. Match your generated scripts to that mode (Browserbase cloud session vs. local Playwright launch)."
+    },
+    {
+      "number": 341,
+      "text": ""
+    },
+    {
+      "number": 342,
+      "text": "    ## Web Task Rules"
+    },
+    {
+      "number": 343,
+      "text": ""
+    },
+    {
+      "number": 344,
+      "text": "    - Do not guess UI interactions. Use printed evidence from the current run."
+    },
+    {
+      "number": 345,
+      "text": "    - Some required filters or options may be hidden behind expandable sections, drawers, dropdowns, or mobile filter panels. Open those controls and inspect again before deciding a filter is unavailable."
+    },
+    {
+      "number": 346,
+      "text": "    - A broad search query does not satisfy explicit filter constraints when the site exposes dedicated controls."
+    },
+    {
+      "number": 347,
+      "text": "    - Save final verification screenshots inside the active `final_runs/run_<id>/screenshots/` folder."
+    },
+    {
+      "number": 348,
+      "text": "    - Print concise ARIA snapshots, URLs, titles, visible labels, and any extracted state needed for the next step."
+    },
+    {
+      "number": 349,
+      "text": ""
+    },
+    {
+      "number": 350,
+      "text": "    ## Task Success Criteria"
+    },
+    {
+      "number": 351,
+      "text": ""
+    },
+    {
+      "number": 352,
+      "text": "    1. Filtered results must be displayed correctly. Missing selection, missing confirmation, or no visible effect = failure."
+    },
+    {
+      "number": 353,
+      "text": "    2. Specific filter conditions (\"best,\" \"highest,\" \"cheapest,\" \"latest,\" \"lowest,\" etc.) must be applied using the filter/sort function."
+    },
+    {
+      "number": 354,
+      "text": "    3. Requirements must be applied through filters, not embedded in a broad search query."
+    },
+    {
+      "number": 355,
+      "text": "    4. Numeric ranges (money, years, beds/baths) must exactly match the task requirement — no broadening or narrowing."
+    },
+    {
+      "number": 356,
+      "text": "    5. Tasks requiring a submission action or results display need that action to be taken."
+    },
+    {
+      "number": 357,
+      "text": "    6. Empty results are OK if the correct action was performed."
+    },
+    {
+      "number": 358,
+      "text": "    7. All explicit filters must use site controls when those controls exist."
+    },
+    {
+      "number": 359,
+      "text": "    8. If a site control does not exist, verify the constraint directly from page content."
+    },
+    {
+      "number": 360,
+      "text": ""
+    },
+    {
+      "number": 361,
+      "text": "    ## Image QA Tool"
+    },
+    {
+      "number": 362,
+      "text": ""
+    },
+    {
+      "number": 363,
+      "text": "    - Use image_qa during exploration to inspect screenshots and verify UI state:"
+    },
+    {
+      "number": 364,
+      "text": "      `python -m webwright.tools.image_qa --workspace-dir \"{{ workspace_dir }}\" --image screenshots/example.png --question \"inspect prompt\"`"
+    },
+    {
+      "number": 365,
+      "text": "    - Use multiple `--image` flags for combined visual verification."
+    },
+    {
+      "number": 366,
+      "text": "    - image_qa returns JSON with `answer`, `evidence`, `unknown`, and `confidence` fields."
+    },
+    {
+      "number": 367,
+      "text": ""
+    },
+    {
+      "number": 368,
+      "text": "    ## Recommended Workflow"
+    },
+    {
+      "number": 369,
+      "text": ""
+    },
+    {
+      "number": 370,
+      "text": "    1. **Planning**: Parse the task into a list of critical points — every explicit constraint, filter, sort, selection, or datum that must be satisfied. Write them to `plan.md` as a checklist:"
+    },
+    {
+      "number": 371,
+      "text": "       ```"
+    },
+    {
+      "number": 372,
+      "text": "       # Critical Points"
+    },
+    {
+      "number": 373,
+      "text": "       - [ ] CP1: <description of constraint/filter/action>"
+    },
+    {
+      "number": 374,
+      "text": "       - [ ] CP2: <description of constraint/filter/action>"
+    },
+    {
+      "number": 375,
+      "text": "       ..."
+    },
+    {
+      "number": 376,
+      "text": "       ```"
+    },
+    {
+      "number": 377,
+      "text": "       Each critical point must be independently verifiable from a screenshot or log entry."
+    },
+    {
+      "number": 378,
+      "text": ""
+    },
+    {
+      "number": 379,
+      "text": "    2. **Author self_reflect_config.json (once)**: Write `{{ workspace_dir }}/self_reflect_config.json` containing only the four prompts (`image_judge_system_prompt`, `image_judge_user_prompt`, `final_verdict_system_prompt`, `final_verdict_user_prompt`) for `webwright.tools.self_reflection`. Embed the full critical-point list from `plan.md` and the task description into the user prompts, but keep the prompts generic — this file is reused verbatim for every `self_reflection` invocation, so do NOT hard-code a specific run id, screenshot filename, or `final_script_log.txt` content."
+    },
+    {
+      "number": 380,
+      "text": ""
+    },
+    {
+      "number": 381,
+      "text": "    3. **Exploration**: Inspect `task.json`, create exploration scripts, identify every required filter control. Use `image_qa` during exploration to verify UI state."
+    },
+    {
+      "number": 382,
+      "text": ""
+    },
+    {
+      "number": 383,
+      "text": "    4. **Final script**: Write `final_script.py`, run it once in a new `final_runs/run_<id>/` folder. The script must produce screenshots and action logs as described in **Final Script Instrumentation**."
+    },
+    {
+      "number": 384,
+      "text": ""
+    },
+    {
+      "number": 385,
+      "text": "    5. **Run self_reflection**: Execute `python -m webwright.tools.self_reflection --config self_reflect_config.json --workspace-dir \"{{ workspace_dir }}\" --output final_runs/run_<id>/self_reflect_result.json`. The tool auto-attaches every screenshot in the latest `final_runs/run_*/screenshots/` folder (default `--auto-latest-run final_runs`) — you do NOT pass an image list. If the tool exits non-zero or `predicted_label != 1`, diagnose the specific issue, fix `final_script.py`, re-run it in a new `final_runs/run_<id+1>/` folder, and re-invoke `self_reflection` against the new run. Do NOT edit `self_reflect_config.json` between attempts."
+    },
+    {
+      "number": 386,
+      "text": ""
+    },
+    {
+      "number": 387,
+      "text": "    6. **Declare done**: Set `\"done\": true` ONLY after `self_reflection` exits 0 and `self_reflect_result.json` reports `\"predicted_label\": 1` for the latest run. The external judge reads that same `self_reflect_result.json` as the final verdict. Declaring done in any other state is a failure."
+    },
+    {
+      "number": 388,
+      "text": ""
+    },
+    {
+      "number": 389,
+      "text": "    ## Final Script Instrumentation"
+    },
+    {
+      "number": 390,
+      "text": ""
+    },
+    {
+      "number": 391,
+      "text": "    `final_script.py` must:"
+    },
+    {
+      "number": 392,
+      "text": "    - be stored as `final_runs/run_<id>/final_script.py`"
+    },
+    {
+      "number": 393,
+      "text": "    - save critical-point screenshots as `final_runs/run_<id>/screenshots/final_execution_<step_number>_<action>.png`"
+    },
+    {
+      "number": 394,
+      "text": "    - create or reset `final_runs/run_<id>/final_script_log.txt` at the start of each clean run"
+    },
+    {
+      "number": 395,
+      "text": "    - write `step <step_number> action: <reason and action description>` to the log for every constraint-relevant interaction"
+    },
+    {
+      "number": 396,
+      "text": "    - each screenshot should correspond to a critical point from `plan.md` so that `self_reflection` can verify it"
+    },
+    {
+      "number": 397,
+      "text": ""
+    },
+    {
+      "number": 398,
+      "text": "    This instrumentation is mandatory because both `self_reflection` and the external judge evaluate those screenshots and action logs."
+    },
+    {
+      "number": 399,
+      "text": ""
+    },
+    {
+      "number": 400,
+      "text": "    ## Completion Gate"
+    },
+    {
+      "number": 401,
+      "text": ""
+    },
+    {
+      "number": 402,
+      "text": "    Set `\"done\": true` ONLY if ALL of the following are true:"
+    },
+    {
+      "number": 403,
+      "text": "    1. `plan.md` exists with all critical points identified."
+    },
+    {
+      "number": 404,
+      "text": "    2. `self_reflect_config.json` exists with all four prompts populated for `self_reflection`."
+    },
+    {
+      "number": 405,
+      "text": "    3. `final_script.py` was run from scratch in a `final_runs/run_<id>/` folder."
+    },
+    {
+      "number": 406,
+      "text": "    4. `python -m webwright.tools.self_reflection --config self_reflect_config.json --workspace-dir \"{{ workspace_dir }}\" --output final_runs/run_<id>/self_reflect_result.json` was executed against that run, exited 0, and wrote `final_runs/run_<id>/self_reflect_result.json` with `\"predicted_label\": 1`."
+    },
+    {
+      "number": 407,
+      "text": "    5. `ls -R final_runs/run_<id>` and `cat final_runs/run_<id>/final_script_log.txt` confirm the expected artifacts."
+    },
+    {
+      "number": 408,
+      "text": ""
+    },
+    {
+      "number": 409,
+      "text": "    Do NOT declare done if `self_reflection` exits non-zero, if `predicted_label` is not 1, if the run folder is missing, if required screenshots are missing, or if `self_reflection` has not been run against the latest `final_runs/run_<id>/`."
+    },
+    {
+      "number": 410,
+      "text": "    </instructions>"
+    }
+  ],
+  "error": null
+}

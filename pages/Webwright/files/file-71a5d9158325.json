@@ -1,0 +1,844 @@
+{
+  "id": "file-71a5d9158325",
+  "path": "src/webwright/config/local_browser.yaml",
+  "language": "yaml",
+  "lines": [
+    {
+      "number": 1,
+      "text": "# Live local browser modifier. Stack it on top of base.yaml, then add a model"
+    },
+    {
+      "number": 2,
+      "text": "# modifier, for example:"
+    },
+    {
+      "number": 3,
+      "text": "#"
+    },
+    {
+      "number": 4,
+      "text": "#   python -m webwright.run.cli \\"
+    },
+    {
+      "number": 5,
+      "text": "#     -c base.yaml -c local_browser.yaml -c model_openai.yaml \\"
+    },
+    {
+      "number": 6,
+      "text": "#     -t \"Open example.com and report the title\" \\"
+    },
+    {
+      "number": 7,
+      "text": "#     --start-url https://example.com"
+    },
+    {
+      "number": 8,
+      "text": "#"
+    },
+    {
+      "number": 9,
+      "text": "# This mode runs a live Playwright session: the agent drives `page`, `context`,"
+    },
+    {
+      "number": 10,
+      "text": "# `browser`, and `playwright` directly each turn. There is NO workspace"
+    },
+    {
+      "number": 11,
+      "text": "# directory, NO standalone final script, NO image_qa, and NO self_reflection"
+    },
+    {
+      "number": 12,
+      "text": "# — the agent observes the live page and reports the answer in `final_response`"
+    },
+    {
+      "number": 13,
+      "text": "# when it is done."
+    },
+    {
+      "number": 14,
+      "text": "#"
+    },
+    {
+      "number": 15,
+      "text": "# What the agent sees each step (via the observation_template below):"
+    },
+    {
+      "number": 16,
+      "text": "#   - status / URL / title / printed stdout from the `python_code` step"
+    },
+    {
+      "number": 17,
+      "text": "#   - browser console output captured since the previous step"
+    },
+    {
+      "number": 18,
+      "text": "#   - ARIA snapshot of the page body (text, every step) — this is the agent's"
+    },
+    {
+      "number": 19,
+      "text": "#     primary view of page structure"
+    },
+    {
+      "number": 20,
+      "text": "#   - Screenshot PATH as text (the env saves step_<NNNN>.png to disk every step)"
+    },
+    {
+      "number": 21,
+      "text": "#"
+    },
+    {
+      "number": 22,
+      "text": "# The screenshot file is NOT visually attached to the prompt by default."
+    },
+    {
+      "number": 23,
+      "text": "# `base.yaml` sets `model.attach_observation_screenshot: false`, so the agent"
+    },
+    {
+      "number": 24,
+      "text": "# relies on the ARIA snapshot + printed text. To send the PNG as a real image"
+    },
+    {
+      "number": 25,
+      "text": "# input each step (extra image tokens, slower, costlier), override in this file:"
+    },
+    {
+      "number": 26,
+      "text": "#"
+    },
+    {
+      "number": 27,
+      "text": "#   model:"
+    },
+    {
+      "number": 28,
+      "text": "#     attach_observation_screenshot: true"
+    },
+    {
+      "number": 29,
+      "text": "#"
+    },
+    {
+      "number": 30,
+      "text": "# Defaults to real Edge/Chrome over CDP on http://127.0.0.1:9222 with"
+    },
+    {
+      "number": 31,
+      "text": "# ~/.cache/webwright/edge-profile. Override with LOCAL_BROWSER_CDP_URL /"
+    },
+    {
+      "number": 32,
+      "text": "# BROWSER_CDP_URL or LOCAL_BROWSER_USER_DATA_DIR if needed. local_cdp uses"
+    },
+    {
+      "number": 33,
+      "text": "# the real browser window size instead of forcing a Playwright viewport."
+    },
+    {
+      "number": 34,
+      "text": ""
+    },
+    {
+      "number": 35,
+      "text": "model:"
+    },
+    {
+      "number": 36,
+      "text": "  action_field: python_code"
+    },
+    {
+      "number": 37,
+      "text": "  observation_template: |"
+    },
+    {
+      "number": 38,
+      "text": "    Observation:"
+    },
+    {
+      "number": 39,
+      "text": "    Status: {{ 'ok' if observation.success else 'error' }}"
+    },
+    {
+      "number": 40,
+      "text": "    URL: {{ observation.url }}"
+    },
+    {
+      "number": 41,
+      "text": "    Title: {{ observation.title }}"
+    },
+    {
+      "number": 42,
+      "text": "    {% if observation.exception %}Exception:"
+    },
+    {
+      "number": 43,
+      "text": "    {{ observation.exception }}"
+    },
+    {
+      "number": 44,
+      "text": "    {% endif %}{% if observation.python_output %}Python output:"
+    },
+    {
+      "number": 45,
+      "text": "    {{ observation.python_output }}"
+    },
+    {
+      "number": 46,
+      "text": "    {% endif %}{% if observation.console_output %}Console output:"
+    },
+    {
+      "number": 47,
+      "text": "    {{ observation.console_output }}"
+    },
+    {
+      "number": 48,
+      "text": "    {% endif %}{% if observation.aria_snapshot %}ARIA snapshot:"
+    },
+    {
+      "number": 49,
+      "text": "    {{ observation.aria_snapshot }}"
+    },
+    {
+      "number": 50,
+      "text": "    {% endif %}{% if observation.screenshot_path %}Screenshot path: {{ observation.screenshot_path }}"
+    },
+    {
+      "number": 51,
+      "text": "    {% endif %}"
+    },
+    {
+      "number": 52,
+      "text": "  format_error_template: |"
+    },
+    {
+      "number": 53,
+      "text": "    Format error:"
+    },
+    {
+      "number": 54,
+      "text": ""
+    },
+    {
+      "number": 55,
+      "text": "    {{ error }}"
+    },
+    {
+      "number": 56,
+      "text": ""
+    },
+    {
+      "number": 57,
+      "text": "    Please respond with a single strict JSON object (no prose, no code fences) containing exactly these fields:"
+    },
+    {
+      "number": 58,
+      "text": "    {"
+    },
+    {
+      "number": 59,
+      "text": "      \"thought\": \"<short reasoning about the next step>\","
+    },
+    {
+      "number": 60,
+      "text": "      \"python_code\": \"<exactly one async Python browser step, or empty string when declaring done>\","
+    },
+    {
+      "number": 61,
+      "text": "      \"done\": false,"
+    },
+    {
+      "number": 62,
+      "text": "      \"final_response\": \"\""
+    },
+    {
+      "number": 63,
+      "text": "    }"
+    },
+    {
+      "number": 64,
+      "text": ""
+    },
+    {
+      "number": 65,
+      "text": "environment:"
+    },
+    {
+      "number": 66,
+      "text": "  environment_class: local_browser"
+    },
+    {
+      "number": 67,
+      "text": "  # Modes:"
+    },
+    {
+      "number": 68,
+      "text": "  # - local_launch: clean Playwright browser context, no saved cookies."
+    },
+    {
+      "number": 69,
+      "text": "  # - local_persistent: Playwright persistent context."
+    },
+    {
+      "number": 70,
+      "text": "  # - local_cdp: real Chrome/Edge over CDP, recommended for manual Google login."
+    },
+    {
+      "number": 71,
+      "text": "  browser_mode: local_cdp"
+    },
+    {
+      "number": 72,
+      "text": "  # Match the backup/local-skill behavior: create a fresh task tab on each run"
+    },
+    {
+      "number": 73,
+      "text": "  # instead of inheriting a stale first tab from an older CDP session."
+    },
+    {
+      "number": 74,
+      "text": "  local_cdp_new_page: true"
+    },
+    {
+      "number": 75,
+      "text": ""
+    },
+    {
+      "number": 76,
+      "text": "agent:"
+    },
+    {
+      "number": 77,
+      "text": "  # No artifact-based verification in this mode; the model decides when it's done."
+    },
+    {
+      "number": 78,
+      "text": "  require_self_reflection_success: false"
+    },
+    {
+      "number": 79,
+      "text": ""
+    },
+    {
+      "number": 80,
+      "text": "  # Keep only the most recent observation's ARIA snapshot in context; strip ARIA"
+    },
+    {
+      "number": 81,
+      "text": "  # from older observation messages (URL, title, printed stdout are preserved)."
+    },
+    {
+      "number": 82,
+      "text": "  # ARIA snapshots are typically ~10-20k chars each and dominate token usage in"
+    },
+    {
+      "number": 83,
+      "text": "  # browser-driven loops. The agent still sees what code it ran and what each"
+    },
+    {
+      "number": 84,
+      "text": "  # step's URL/title/output were, so navigation works fine with N=1."
+    },
+    {
+      "number": 85,
+      "text": "  keep_last_n_observations: 1"
+    },
+    {
+      "number": 86,
+      "text": ""
+    },
+    {
+      "number": 87,
+      "text": "  # Compaction fires every `summary_every_n_steps` (20, inherited from base.yaml)."
+    },
+    {
+      "number": 88,
+      "text": "  # base.yaml's default summary prompt references workspace artifacts (plan.md,"
+    },
+    {
+      "number": 89,
+      "text": "  # final_script.py, final_runs/, self_reflection) and `bash_command` that do not"
+    },
+    {
+      "number": 90,
+      "text": "  # apply to live-browser mode, so we override it with a prompt tailored to"
+    },
+    {
+      "number": 91,
+      "text": "  # browser state."
+    },
+    {
+      "number": 92,
+      "text": "  summary_user_prompt: |"
+    },
+    {
+      "number": 93,
+      "text": "    You are about to have your working context compacted to save tokens."
+    },
+    {
+      "number": 94,
+      "text": ""
+    },
+    {
+      "number": 95,
+      "text": "    Write a concise but COMPLETE summary of everything relevant from the conversation above so that a"
+    },
+    {
+      "number": 96,
+      "text": "    fresh agent with only this summary (plus the original system prompt and task instructions) can"
+    },
+    {
+      "number": 97,
+      "text": "    continue driving the live browser without losing progress. Include:"
+    },
+    {
+      "number": 98,
+      "text": ""
+    },
+    {
+      "number": 99,
+      "text": "    - The original task goal and every explicit constraint or filter."
+    },
+    {
+      "number": 100,
+      "text": "    - The current page state: URL, title, key visible labels, which controls/drawers are open, any"
+    },
+    {
+      "number": 101,
+      "text": "      filter or selection chips currently applied."
+    },
+    {
+      "number": 102,
+      "text": "    - What has been done so far and what remains, including any blockers or dead ends encountered."
+    },
+    {
+      "number": 103,
+      "text": "    - Key findings worth remembering: stable selectors that worked, ARIA labels, URL patterns,"
+    },
+    {
+      "number": 104,
+      "text": "      pitfalls to avoid, and any datum already extracted from the page."
+    },
+    {
+      "number": 105,
+      "text": "    - The next concrete browser action to take."
+    },
+    {
+      "number": 106,
+      "text": ""
+    },
+    {
+      "number": 107,
+      "text": "    Write the summary as plain prose and bullet lists. Do NOT issue a new `python_code`. Do NOT set"
+    },
+    {
+      "number": 108,
+      "text": "    `done=true`. Put the entire summary in the `thought` field and leave `python_code` and"
+    },
+    {
+      "number": 109,
+      "text": "    `final_response` empty."
+    },
+    {
+      "number": 110,
+      "text": ""
+    },
+    {
+      "number": 111,
+      "text": "  system_template: |"
+    },
+    {
+      "number": 112,
+      "text": "    You are a web agent driving a live local browser session."
+    },
+    {
+      "number": 113,
+      "text": ""
+    },
+    {
+      "number": 114,
+      "text": "    Your response must be a single strict JSON object (no prose, no markdown, no code fences) with exactly these fields:"
+    },
+    {
+      "number": 115,
+      "text": "    {"
+    },
+    {
+      "number": 116,
+      "text": "      \"thought\": \"<your observation, reasoning, and next step>\","
+    },
+    {
+      "number": 117,
+      "text": "      \"python_code\": \"<exactly one async Python browser step, or empty string when declaring done>\","
+    },
+    {
+      "number": 118,
+      "text": "      \"done\": false,"
+    },
+    {
+      "number": 119,
+      "text": "      \"final_response\": \"<the user-visible answer when done is true, otherwise empty>\""
+    },
+    {
+      "number": 120,
+      "text": "    }"
+    },
+    {
+      "number": 121,
+      "text": ""
+    },
+    {
+      "number": 122,
+      "text": "    Emit exactly ONE JSON object per turn. Never output multiple JSON objects, never wrap the object in prose or code fences."
+    },
+    {
+      "number": 123,
+      "text": ""
+    },
+    {
+      "number": 124,
+      "text": "    ## Global Constraints"
+    },
+    {
+      "number": 125,
+      "text": "    - Put exactly one async Python step in `python_code`. The harness already exposes `page`, `context`, `browser`, `playwright`, `asyncio`, and `task` — drive the live browser through these. Never import, launch, or close Playwright yourself; never close `page`, `context`, `browser`, or `playwright`."
+    },
+    {
+      "number": 126,
+      "text": "    - The live browser state is persistent across steps. Reuse it; do not re-navigate from scratch every turn unless something has gone wrong."
+    },
+    {
+      "number": 127,
+      "text": "    - There is NO workspace directory in this mode. Do NOT write artifact files. Drive the browser, observe the page, and report."
+    },
+    {
+      "number": 128,
+      "text": "    - Escape newlines and quotes properly so the whole object remains valid JSON."
+    },
+    {
+      "number": 129,
+      "text": "    - Reason internally, then execute one Python step, then inspect the next observation."
+    },
+    {
+      "number": 130,
+      "text": "    - Set `\"done\": true` ONLY when you can fully answer the task. Put the user-visible answer in `final_response`."
+    },
+    {
+      "number": 131,
+      "text": "    - NEVER set `\"done\": true` in the same response as a non-empty `python_code`. Declare done in a SEPARATE response AFTER the prior observation confirmed the answer."
+    },
+    {
+      "number": 132,
+      "text": "    - Do NOT install additional packages with pip, apt, or any other package manager. All required packages are already installed."
+    },
+    {
+      "number": 133,
+      "text": ""
+    },
+    {
+      "number": 134,
+      "text": "    ## Browser Mode"
+    },
+    {
+      "number": 135,
+      "text": ""
+    },
+    {
+      "number": 136,
+      "text": "    The harness has already started the browser for you:"
+    },
+    {
+      "number": 137,
+      "text": "    - `browser_mode=local_cdp` (default): an already-connected Chrome/Edge page over CDP."
+    },
+    {
+      "number": 138,
+      "text": "    - `browser_mode=local_persistent` or `local_launch`: an already-created Playwright page."
+    },
+    {
+      "number": 139,
+      "text": ""
+    },
+    {
+      "number": 140,
+      "text": "    ## Playwright Example"
+    },
+    {
+      "number": 141,
+      "text": ""
+    },
+    {
+      "number": 142,
+      "text": "    Example response (rendered for readability — in practice you emit a single JSON object on one logical message):"
+    },
+    {
+      "number": 143,
+      "text": "    ```"
+    },
+    {
+      "number": 144,
+      "text": "    {"
+    },
+    {
+      "number": 145,
+      "text": "      \"thought\": \"Navigate to the start URL and print the URL, title, and a short ARIA snapshot for the next step.\","
+    },
+    {
+      "number": 146,
+      "text": "      \"python_code\": \"await page.goto(\\\"{{ start_url }}\\\", wait_until=\\\"domcontentloaded\\\")\\nprint(\\\"URL:\\\", page.url)\\nprint(\\\"TITLE:\\\", await page.title())\\nprint(\\\"ARIA:\\\", await page.locator(\\\"body\\\").aria_snapshot())\","
+    },
+    {
+      "number": 147,
+      "text": "      \"done\": false,"
+    },
+    {
+      "number": 148,
+      "text": "      \"final_response\": \"\""
+    },
+    {
+      "number": 149,
+      "text": "    }"
+    },
+    {
+      "number": 150,
+      "text": "    ```"
+    },
+    {
+      "number": 151,
+      "text": "    (The `python_code` value above is shown with literal newlines for readability; in an actual JSON response those newlines must be encoded as `\\n` so the object remains valid JSON.)"
+    },
+    {
+      "number": 152,
+      "text": ""
+    },
+    {
+      "number": 153,
+      "text": "    ## Rules"
+    },
+    {
+      "number": 154,
+      "text": "    - Use stable selectors and current-observation evidence; do not guess UI interactions."
+    },
+    {
+      "number": 155,
+      "text": "    - Hidden controls (drawers, accordions, dropdowns, mobile filter panels) must be opened before deciding a control is unavailable."
+    },
+    {
+      "number": 156,
+      "text": "    - A broad search query does not satisfy explicit filter constraints when the site exposes dedicated controls."
+    },
+    {
+      "number": 157,
+      "text": "    - If the site exposes a dedicated control for a requirement, you must use that control. Search terms alone do not satisfy a filter, sort, style, or attribute requirement."
+    },
+    {
+      "number": 158,
+      "text": "    - Ranking language such as `best-selling`, `most reviewed`, `highest-rated`, `lowest`, and `cheapest` must be grounded in the site's actual metric or control."
+    },
+    {
+      "number": 159,
+      "text": "    - If a selected state becomes hidden after a drawer, accordion, modal, or dropdown closes, reopen that control or capture a visible chip/summary before treating the state as verified."
+    },
+    {
+      "number": 160,
+      "text": "    - Treat numeric, date, quantity, and unit constraints as exact. Wider buckets or broader defaults are failures unless the site offers no exacter control."
+    },
+    {
+      "number": 161,
+      "text": "    - If the task asks for a final datum (code, price, quote, review, winner, benefit list), state that datum explicitly in `final_response`."
+    },
+    {
+      "number": 162,
+      "text": "    - For blocker claims (Access Denied, unavailable controls), only stop after repeated evidence from the actual site UI."
+    },
+    {
+      "number": 163,
+      "text": ""
+    },
+    {
+      "number": 164,
+      "text": "  instance_template: |"
+    },
+    {
+      "number": 165,
+      "text": "    Task: {{ task }}"
+    },
+    {
+      "number": 166,
+      "text": "    {% if task_id %}Task ID: {{ task_id }}"
+    },
+    {
+      "number": 167,
+      "text": "    {% endif %}{% if start_url %}Start URL: {{ start_url }}"
+    },
+    {
+      "number": 168,
+      "text": "    {% endif %}Browser mode: {{ browser_mode }}"
+    },
+    {
+      "number": 169,
+      "text": ""
+    },
+    {
+      "number": 170,
+      "text": "    <instructions>"
+    },
+    {
+      "number": 171,
+      "text": "    # Task Instructions"
+    },
+    {
+      "number": 172,
+      "text": ""
+    },
+    {
+      "number": 173,
+      "text": "    You're solving a user-specified web task by driving a live local browser session."
+    },
+    {
+      "number": 174,
+      "text": ""
+    },
+    {
+      "number": 175,
+      "text": "    <IMPORTANT>"
+    },
+    {
+      "number": 176,
+      "text": "    This is an interactive process where you reason, execute exactly one async Python browser step, inspect the result, and then produce your next step. The browser state and your context are both persistent across steps — no need to reload state between turns."
+    },
+    {
+      "number": 177,
+      "text": "    </IMPORTANT>"
+    },
+    {
+      "number": 178,
+      "text": ""
+    },
+    {
+      "number": 179,
+      "text": "    ## Harness Rules"
+    },
+    {
+      "number": 180,
+      "text": ""
+    },
+    {
+      "number": 181,
+      "text": "    - There is NO workspace directory. Do NOT write any files; do NOT create `final_runs/`, `screenshots/`, `plan.md`, `final_script.py`, or any log."
+    },
+    {
+      "number": 182,
+      "text": "    - Drive the live `page`, `context`, `browser`, and `playwright` variables. Do NOT re-launch Playwright."
+    },
+    {
+      "number": 183,
+      "text": "    - Do NOT invoke `webwright.tools.image_qa` or `webwright.tools.self_reflection`."
+    },
+    {
+      "number": 184,
+      "text": "    - Browser mode is `{{ browser_mode }}`."
+    },
+    {
+      "number": 185,
+      "text": ""
+    },
+    {
+      "number": 186,
+      "text": "    ## Web Task Rules"
+    },
+    {
+      "number": 187,
+      "text": ""
+    },
+    {
+      "number": 188,
+      "text": "    - Do not guess UI interactions. Use printed evidence from the current observation."
+    },
+    {
+      "number": 189,
+      "text": "    - Some required filters or options may be hidden behind expandable sections, drawers, dropdowns, or mobile filter panels. Open those controls and inspect again before deciding a filter is unavailable."
+    },
+    {
+      "number": 190,
+      "text": "    - A broad search query does not satisfy explicit filter constraints when the site exposes dedicated controls."
+    },
+    {
+      "number": 191,
+      "text": "    - Print concise ARIA snapshots, URLs, titles, visible labels, and any extracted state needed for the next step."
+    },
+    {
+      "number": 192,
+      "text": ""
+    },
+    {
+      "number": 193,
+      "text": "    ## Task Success Criteria"
+    },
+    {
+      "number": 194,
+      "text": ""
+    },
+    {
+      "number": 195,
+      "text": "    1. Filtered results must be displayed correctly. Missing selection, missing confirmation, or no visible effect = failure."
+    },
+    {
+      "number": 196,
+      "text": "    2. Specific filter conditions (\"best,\" \"highest,\" \"cheapest,\" \"latest,\" \"lowest,\" etc.) must be applied using the filter/sort function."
+    },
+    {
+      "number": 197,
+      "text": "    3. Requirements must be applied through filters, not embedded in a broad search query."
+    },
+    {
+      "number": 198,
+      "text": "    4. Numeric ranges (money, years, beds/baths) must exactly match the task requirement — no broadening or narrowing."
+    },
+    {
+      "number": 199,
+      "text": "    5. Tasks requiring a submission action or results display need that action to be taken."
+    },
+    {
+      "number": 200,
+      "text": "    6. Empty results are OK if the correct action was performed."
+    },
+    {
+      "number": 201,
+      "text": "    7. All explicit filters must use site controls when those controls exist."
+    },
+    {
+      "number": 202,
+      "text": "    8. If a site control does not exist, verify the constraint directly from page content."
+    },
+    {
+      "number": 203,
+      "text": ""
+    },
+    {
+      "number": 204,
+      "text": "    ## Workflow"
+    },
+    {
+      "number": 205,
+      "text": ""
+    },
+    {
+      "number": 206,
+      "text": "    1. Reason about the task and identify the constraints."
+    },
+    {
+      "number": 207,
+      "text": "    2. Drive the live `page` one step at a time. Print evidence (URL, title, ARIA snippets, extracted text) so the next step has context."
+    },
+    {
+      "number": 208,
+      "text": "    3. When the task is fully satisfied and you can state the answer, set `\"done\": true` in a SEPARATE turn and put the user-visible answer in `final_response`. Do NOT pair `done: true` with a non-empty `python_code`."
+    },
+    {
+      "number": 209,
+      "text": "    </instructions>"
+    }
+  ],
+  "error": null
+}

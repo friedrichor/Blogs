@@ -1,0 +1,96 @@
+{
+  "id": "file-ec91cecac0ed",
+  "path": "src/webwright/utils/serialize.py",
+  "language": "python",
+  "lines": [
+    {
+      "number": 1,
+      "text": "from __future__ import annotations"
+    },
+    {
+      "number": 2,
+      "text": ""
+    },
+    {
+      "number": 3,
+      "text": "from typing import Any"
+    },
+    {
+      "number": 4,
+      "text": ""
+    },
+    {
+      "number": 5,
+      "text": "UNSET = object()"
+    },
+    {
+      "number": 6,
+      "text": ""
+    },
+    {
+      "number": 7,
+      "text": ""
+    },
+    {
+      "number": 8,
+      "text": "def recursive_merge(*dictionaries: dict | None) -> dict[str, Any]:"
+    },
+    {
+      "number": 9,
+      "text": "    result: dict[str, Any] = {}"
+    },
+    {
+      "number": 10,
+      "text": "    for dictionary in dictionaries:"
+    },
+    {
+      "number": 11,
+      "text": "        if dictionary is None:"
+    },
+    {
+      "number": 12,
+      "text": "            continue"
+    },
+    {
+      "number": 13,
+      "text": "        for key, value in dictionary.items():"
+    },
+    {
+      "number": 14,
+      "text": "            if value is UNSET:"
+    },
+    {
+      "number": 15,
+      "text": "                continue"
+    },
+    {
+      "number": 16,
+      "text": "            if key in result and isinstance(result[key], dict) and isinstance(value, dict):"
+    },
+    {
+      "number": 17,
+      "text": "                result[key] = recursive_merge(result[key], value)"
+    },
+    {
+      "number": 18,
+      "text": "            elif isinstance(value, dict):"
+    },
+    {
+      "number": 19,
+      "text": "                result[key] = recursive_merge(value)"
+    },
+    {
+      "number": 20,
+      "text": "            else:"
+    },
+    {
+      "number": 21,
+      "text": "                result[key] = value"
+    },
+    {
+      "number": 22,
+      "text": "    return result"
+    }
+  ],
+  "error": null
+}

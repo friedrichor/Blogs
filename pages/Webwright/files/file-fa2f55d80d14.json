@@ -1,0 +1,572 @@
+{
+  "id": "file-fa2f55d80d14",
+  "path": "src/webwright/tools/image_qa.py",
+  "language": "python",
+  "lines": [
+    {
+      "number": 1,
+      "text": "from __future__ import annotations"
+    },
+    {
+      "number": 2,
+      "text": ""
+    },
+    {
+      "number": 3,
+      "text": "import argparse"
+    },
+    {
+      "number": 4,
+      "text": "import base64"
+    },
+    {
+      "number": 5,
+      "text": "import json"
+    },
+    {
+      "number": 6,
+      "text": "import mimetypes"
+    },
+    {
+      "number": 7,
+      "text": "from pathlib import Path"
+    },
+    {
+      "number": 8,
+      "text": "from typing import Any"
+    },
+    {
+      "number": 9,
+      "text": ""
+    },
+    {
+      "number": 10,
+      "text": "from webwright.models.base import text_part"
+    },
+    {
+      "number": 11,
+      "text": "from webwright.tools._model_config import load_tool_model"
+    },
+    {
+      "number": 12,
+      "text": ""
+    },
+    {
+      "number": 13,
+      "text": ""
+    },
+    {
+      "number": 14,
+      "text": "def _build_prompt(question: str) -> str:"
+    },
+    {
+      "number": 15,
+      "text": "    return ("
+    },
+    {
+      "number": 16,
+      "text": "        \"Answer the user's question using only visible evidence from the provided image or images. \""
+    },
+    {
+      "number": 17,
+      "text": "        \"If the answer is not visible, say so instead of guessing. Return only a JSON object with \""
+    },
+    {
+      "number": 18,
+      "text": "        \"string `answer`, string array `evidence`, boolean `unknown`, and number `confidence`.\\n\\n\""
+    },
+    {
+      "number": 19,
+      "text": "        f\"Question: {question.strip()}\""
+    },
+    {
+      "number": 20,
+      "text": "    )"
+    },
+    {
+      "number": 21,
+      "text": ""
+    },
+    {
+      "number": 22,
+      "text": ""
+    },
+    {
+      "number": 23,
+      "text": "def _high_detail_image_part_from_path(image_path: Path) -> dict[str, Any]:"
+    },
+    {
+      "number": 24,
+      "text": "    mime_type, _ = mimetypes.guess_type(str(image_path))"
+    },
+    {
+      "number": 25,
+      "text": "    encoded = base64.b64encode(image_path.read_bytes()).decode(\"ascii\")"
+    },
+    {
+      "number": 26,
+      "text": "    return {"
+    },
+    {
+      "number": 27,
+      "text": "        \"type\": \"input_image\","
+    },
+    {
+      "number": 28,
+      "text": "        \"image_url\": f\"data:{mime_type or 'image/png'};base64,{encoded}\","
+    },
+    {
+      "number": 29,
+      "text": "        \"detail\": \"high\","
+    },
+    {
+      "number": 30,
+      "text": "    }"
+    },
+    {
+      "number": 31,
+      "text": ""
+    },
+    {
+      "number": 32,
+      "text": ""
+    },
+    {
+      "number": 33,
+      "text": "def _resolve_image_path(image_path: str, workspace_dir: str = \"\") -> Path:"
+    },
+    {
+      "number": 34,
+      "text": "    path = Path(image_path)"
+    },
+    {
+      "number": 35,
+      "text": "    if not path.is_absolute():"
+    },
+    {
+      "number": 36,
+      "text": "        base_dir = Path(workspace_dir) if workspace_dir else Path.cwd()"
+    },
+    {
+      "number": 37,
+      "text": "        path = base_dir / path"
+    },
+    {
+      "number": 38,
+      "text": "    path = path.resolve()"
+    },
+    {
+      "number": 39,
+      "text": "    if not path.exists():"
+    },
+    {
+      "number": 40,
+      "text": "        raise FileNotFoundError(f\"Image path does not exist: {path}\")"
+    },
+    {
+      "number": 41,
+      "text": "    return path"
+    },
+    {
+      "number": 42,
+      "text": ""
+    },
+    {
+      "number": 43,
+      "text": ""
+    },
+    {
+      "number": 44,
+      "text": "def _normalize_image_paths("
+    },
+    {
+      "number": 45,
+      "text": "    *,"
+    },
+    {
+      "number": 46,
+      "text": "    image_path: Path | None = None,"
+    },
+    {
+      "number": 47,
+      "text": "    image_paths: list[Path] | tuple[Path, ...] | None = None,"
+    },
+    {
+      "number": 48,
+      "text": ") -> list[Path]:"
+    },
+    {
+      "number": 49,
+      "text": "    normalized = list(image_paths or [])"
+    },
+    {
+      "number": 50,
+      "text": "    if image_path is not None:"
+    },
+    {
+      "number": 51,
+      "text": "        normalized.insert(0, image_path)"
+    },
+    {
+      "number": 52,
+      "text": "    if not normalized:"
+    },
+    {
+      "number": 53,
+      "text": "        raise ValueError(\"At least one image path is required.\")"
+    },
+    {
+      "number": 54,
+      "text": "    return normalized"
+    },
+    {
+      "number": 55,
+      "text": ""
+    },
+    {
+      "number": 56,
+      "text": ""
+    },
+    {
+      "number": 57,
+      "text": "def _parse_json_response(raw_text: str) -> dict[str, Any]:"
+    },
+    {
+      "number": 58,
+      "text": "    try:"
+    },
+    {
+      "number": 59,
+      "text": "        parsed = json.loads(raw_text)"
+    },
+    {
+      "number": 60,
+      "text": "    except json.JSONDecodeError:"
+    },
+    {
+      "number": 61,
+      "text": "        start = raw_text.find(\"{\")"
+    },
+    {
+      "number": 62,
+      "text": "        end = raw_text.rfind(\"}\")"
+    },
+    {
+      "number": 63,
+      "text": "        if start == -1 or end == -1 or end <= start:"
+    },
+    {
+      "number": 64,
+      "text": "            raise"
+    },
+    {
+      "number": 65,
+      "text": "        parsed = json.loads(raw_text[start : end + 1])"
+    },
+    {
+      "number": 66,
+      "text": "    if not isinstance(parsed, dict):"
+    },
+    {
+      "number": 67,
+      "text": "        raise ValueError(\"image_qa model response must be a JSON object.\")"
+    },
+    {
+      "number": 68,
+      "text": "    return parsed"
+    },
+    {
+      "number": 69,
+      "text": ""
+    },
+    {
+      "number": 70,
+      "text": ""
+    },
+    {
+      "number": 71,
+      "text": "def run_image_qa("
+    },
+    {
+      "number": 72,
+      "text": "    *,"
+    },
+    {
+      "number": 73,
+      "text": "    image_path: Path | None = None,"
+    },
+    {
+      "number": 74,
+      "text": "    image_paths: list[Path] | tuple[Path, ...] | None = None,"
+    },
+    {
+      "number": 75,
+      "text": "    question: str,"
+    },
+    {
+      "number": 76,
+      "text": "    model_client: Any,"
+    },
+    {
+      "number": 77,
+      "text": ") -> dict[str, Any]:"
+    },
+    {
+      "number": 78,
+      "text": "    resolved_image_paths = _normalize_image_paths(image_path=image_path, image_paths=image_paths)"
+    },
+    {
+      "number": 79,
+      "text": "    raw_text = model_client("
+    },
+    {
+      "number": 80,
+      "text": "        ["
+    },
+    {
+      "number": 81,
+      "text": "            {"
+    },
+    {
+      "number": 82,
+      "text": "                \"role\": \"user\","
+    },
+    {
+      "number": 83,
+      "text": "                \"content\": [text_part(_build_prompt(question))]"
+    },
+    {
+      "number": 84,
+      "text": "                + [_high_detail_image_part_from_path(path) for path in resolved_image_paths],"
+    },
+    {
+      "number": 85,
+      "text": "            }"
+    },
+    {
+      "number": 86,
+      "text": "        ],"
+    },
+    {
+      "number": 87,
+      "text": "        max_output_tokens=32000,"
+    },
+    {
+      "number": 88,
+      "text": "    ).strip()"
+    },
+    {
+      "number": 89,
+      "text": "    parsed = _parse_json_response(raw_text)"
+    },
+    {
+      "number": 90,
+      "text": "    result = {"
+    },
+    {
+      "number": 91,
+      "text": "        \"image_paths\": [str(path) for path in resolved_image_paths],"
+    },
+    {
+      "number": 92,
+      "text": "        \"question\": question,"
+    },
+    {
+      "number": 93,
+      "text": "        **parsed,"
+    },
+    {
+      "number": 94,
+      "text": "    }"
+    },
+    {
+      "number": 95,
+      "text": "    if len(resolved_image_paths) == 1:"
+    },
+    {
+      "number": 96,
+      "text": "        result[\"image_path\"] = str(resolved_image_paths[0])"
+    },
+    {
+      "number": 97,
+      "text": "    return result"
+    },
+    {
+      "number": 98,
+      "text": ""
+    },
+    {
+      "number": 99,
+      "text": ""
+    },
+    {
+      "number": 100,
+      "text": "def build_parser() -> argparse.ArgumentParser:"
+    },
+    {
+      "number": 101,
+      "text": "    parser = argparse.ArgumentParser(description=\"Ask a visual question about a local image and print JSON.\")"
+    },
+    {
+      "number": 102,
+      "text": "    parser.add_argument("
+    },
+    {
+      "number": 103,
+      "text": "        \"--image\","
+    },
+    {
+      "number": 104,
+      "text": "        required=True,"
+    },
+    {
+      "number": 105,
+      "text": "        action=\"append\","
+    },
+    {
+      "number": 106,
+      "text": "        help=\"Path to an image file. Repeat --image to include multiple images.\","
+    },
+    {
+      "number": 107,
+      "text": "    )"
+    },
+    {
+      "number": 108,
+      "text": "    parser.add_argument(\"--question\", required=True, help=\"Question to answer from the image.\")"
+    },
+    {
+      "number": 109,
+      "text": "    parser.add_argument(\"--workspace-dir\", default=\"\", help=\"Optional base directory for relative image paths.\")"
+    },
+    {
+      "number": 110,
+      "text": "    parser.add_argument("
+    },
+    {
+      "number": 111,
+      "text": "        \"--model-config\","
+    },
+    {
+      "number": 112,
+      "text": "        default=\"\","
+    },
+    {
+      "number": 113,
+      "text": "        help=("
+    },
+    {
+      "number": 114,
+      "text": "            \"Path to a JSON/YAML config containing a top-level `model:` block. \""
+    },
+    {
+      "number": 115,
+      "text": "            \"If omitted, reads <workspace-dir>/config_snapshot/merged_config.yaml.\""
+    },
+    {
+      "number": 116,
+      "text": "        ),"
+    },
+    {
+      "number": 117,
+      "text": "    )"
+    },
+    {
+      "number": 118,
+      "text": "    parser.add_argument(\"--timeout-seconds\", type=int, default=60, help=\"HTTP request timeout.\")"
+    },
+    {
+      "number": 119,
+      "text": "    return parser"
+    },
+    {
+      "number": 120,
+      "text": ""
+    },
+    {
+      "number": 121,
+      "text": ""
+    },
+    {
+      "number": 122,
+      "text": "def main(argv: list[str] | None = None) -> int:"
+    },
+    {
+      "number": 123,
+      "text": "    parser = build_parser()"
+    },
+    {
+      "number": 124,
+      "text": "    args = parser.parse_args(argv)"
+    },
+    {
+      "number": 125,
+      "text": "    image_paths = [_resolve_image_path(image_path, workspace_dir=args.workspace_dir) for image_path in args.image]"
+    },
+    {
+      "number": 126,
+      "text": "    model_client = load_tool_model("
+    },
+    {
+      "number": 127,
+      "text": "        model_config_arg=args.model_config,"
+    },
+    {
+      "number": 128,
+      "text": "        workspace_dir=args.workspace_dir,"
+    },
+    {
+      "number": 129,
+      "text": "        timeout_seconds=args.timeout_seconds,"
+    },
+    {
+      "number": 130,
+      "text": "    )"
+    },
+    {
+      "number": 131,
+      "text": "    result = run_image_qa("
+    },
+    {
+      "number": 132,
+      "text": "        image_paths=image_paths,"
+    },
+    {
+      "number": 133,
+      "text": "        question=args.question,"
+    },
+    {
+      "number": 134,
+      "text": "        model_client=model_client,"
+    },
+    {
+      "number": 135,
+      "text": "    )"
+    },
+    {
+      "number": 136,
+      "text": "    print(json.dumps(result, ensure_ascii=True, indent=2))"
+    },
+    {
+      "number": 137,
+      "text": "    return 0"
+    },
+    {
+      "number": 138,
+      "text": ""
+    },
+    {
+      "number": 139,
+      "text": ""
+    },
+    {
+      "number": 140,
+      "text": "if __name__ == \"__main__\":"
+    },
+    {
+      "number": 141,
+      "text": "    raise SystemExit(main())"
+    }
+  ],
+  "error": null
+}

@@ -1,0 +1,1192 @@
+{
+  "id": "file-b6d638ec2795",
+  "path": "src/webwright/environments/local_workspace.py",
+  "language": "python",
+  "lines": [
+    {
+      "number": 1,
+      "text": "from __future__ import annotations"
+    },
+    {
+      "number": 2,
+      "text": ""
+    },
+    {
+      "number": 3,
+      "text": "import json"
+    },
+    {
+      "number": 4,
+      "text": "import os"
+    },
+    {
+      "number": 5,
+      "text": "import re"
+    },
+    {
+      "number": 6,
+      "text": "import subprocess"
+    },
+    {
+      "number": 7,
+      "text": "from pathlib import Path"
+    },
+    {
+      "number": 8,
+      "text": "from typing import Any"
+    },
+    {
+      "number": 9,
+      "text": ""
+    },
+    {
+      "number": 10,
+      "text": "from pydantic import BaseModel, Field"
+    },
+    {
+      "number": 11,
+      "text": ""
+    },
+    {
+      "number": 12,
+      "text": "_EXPORT_RE = re.compile(r\"^export\\s+([A-Za-z_][A-Za-z0-9_]*)=(.*)$\")"
+    },
+    {
+      "number": 13,
+      "text": "_IMAGE_SUFFIXES = {\".png\", \".jpg\", \".jpeg\", \".webp\"}"
+    },
+    {
+      "number": 14,
+      "text": ""
+    },
+    {
+      "number": 15,
+      "text": ""
+    },
+    {
+      "number": 16,
+      "text": "class LocalWorkspaceEnvironmentConfig(BaseModel):"
+    },
+    {
+      "number": 17,
+      "text": "    \"\"\"Shell-based workspace environment."
+    },
+    {
+      "number": 18,
+      "text": ""
+    },
+    {
+      "number": 19,
+      "text": "    The agent drives a real browser through bash commands it generates inside this"
+    },
+    {
+      "number": 20,
+      "text": "    workspace. Two browser modes are exposed to those generated scripts via"
+    },
+    {
+      "number": 21,
+      "text": "    environment variables:"
+    },
+    {
+      "number": 22,
+      "text": ""
+    },
+    {
+      "number": 23,
+      "text": "    * ``browser_mode = \"browserbase\"`` (default): the agent's scripts should"
+    },
+    {
+      "number": 24,
+      "text": "      create a Browserbase cloud session. ``BROWSERBASE_API_KEY`` and"
+    },
+    {
+      "number": 25,
+      "text": "      ``BROWSERBASE_PROJECT_ID`` are forwarded if present."
+    },
+    {
+      "number": 26,
+      "text": "    * ``browser_mode = \"local\"``: the agent's scripts should launch a local"
+    },
+    {
+      "number": 27,
+      "text": "      Playwright browser (``playwright.chromium.launch(...)``)."
+    },
+    {
+      "number": 28,
+      "text": ""
+    },
+    {
+      "number": 29,
+      "text": "    The selected mode is forwarded to the subprocess via ``BROWSER_MODE`` so the"
+    },
+    {
+      "number": 30,
+      "text": "    generated scripts can branch on it."
+    },
+    {
+      "number": 31,
+      "text": "    \"\"\""
+    },
+    {
+      "number": 32,
+      "text": ""
+    },
+    {
+      "number": 33,
+      "text": "    start_url: str | None = None"
+    },
+    {
+      "number": 34,
+      "text": "    output_dir: Path = Path(\"outputs/sandbox/default\")"
+    },
+    {
+      "number": 35,
+      "text": "    command_timeout_seconds: int = 180"
+    },
+    {
+      "number": 36,
+      "text": "    shell: str = \"/bin/bash\""
+    },
+    {
+      "number": 37,
+      "text": "    env: dict[str, str] = Field(default_factory=dict)"
+    },
+    {
+      "number": 38,
+      "text": "    credentials_file: Path | None = None"
+    },
+    {
+      "number": 39,
+      "text": "    browser_mode: str = \"browserbase\"  # \"browserbase\" or \"local\""
+    },
+    {
+      "number": 40,
+      "text": "    task_metadata_filename: str = \"task.json\""
+    },
+    {
+      "number": 41,
+      "text": "    final_script_name: str = \"final_script.py\""
+    },
+    {
+      "number": 42,
+      "text": "    output_truncation_chars: int = 12000"
+    },
+    {
+      "number": 43,
+      "text": "    final_script_preview_chars: int = 4000"
+    },
+    {
+      "number": 44,
+      "text": "    recent_files_limit: int = 40"
+    },
+    {
+      "number": 45,
+      "text": ""
+    },
+    {
+      "number": 46,
+      "text": ""
+    },
+    {
+      "number": 47,
+      "text": "class LocalWorkspaceEnvironment:"
+    },
+    {
+      "number": 48,
+      "text": "    def __init__(self, *, config_class: type = LocalWorkspaceEnvironmentConfig, **kwargs):"
+    },
+    {
+      "number": 49,
+      "text": "        self.config = config_class(**kwargs)"
+    },
+    {
+      "number": 50,
+      "text": "        self.config.output_dir = self.config.output_dir.expanduser()"
+    },
+    {
+      "number": 51,
+      "text": "        self._step_index = 0"
+    },
+    {
+      "number": 52,
+      "text": "        self._prepared_task: dict[str, Any] = {}"
+    },
+    {
+      "number": 53,
+      "text": "        self._credential_env = self._load_credential_env(self.config.credentials_file)"
+    },
+    {
+      "number": 54,
+      "text": ""
+    },
+    {
+      "number": 55,
+      "text": "    def _load_credential_env(self, path: Path | None) -> dict[str, str]:"
+    },
+    {
+      "number": 56,
+      "text": "        if path is None:"
+    },
+    {
+      "number": 57,
+      "text": "            return {}"
+    },
+    {
+      "number": 58,
+      "text": "        resolved = Path(path).expanduser()"
+    },
+    {
+      "number": 59,
+      "text": "        if not resolved.exists():"
+    },
+    {
+      "number": 60,
+      "text": "            return {}"
+    },
+    {
+      "number": 61,
+      "text": ""
+    },
+    {
+      "number": 62,
+      "text": "        parsed: dict[str, str] = {}"
+    },
+    {
+      "number": 63,
+      "text": "        for raw_line in resolved.read_text(encoding=\"utf-8\").splitlines():"
+    },
+    {
+      "number": 64,
+      "text": "            line = raw_line.strip()"
+    },
+    {
+      "number": 65,
+      "text": "            if not line or line.startswith(\"#\"):"
+    },
+    {
+      "number": 66,
+      "text": "                continue"
+    },
+    {
+      "number": 67,
+      "text": "            match = _EXPORT_RE.match(line)"
+    },
+    {
+      "number": 68,
+      "text": "            if match is None:"
+    },
+    {
+      "number": 69,
+      "text": "                continue"
+    },
+    {
+      "number": 70,
+      "text": "            key, raw_value = match.groups()"
+    },
+    {
+      "number": 71,
+      "text": "            value = raw_value.strip()"
+    },
+    {
+      "number": 72,
+      "text": "            if len(value) >= 2 and value[0] == value[-1] and value[0] in {\"'\", '\"'}:"
+    },
+    {
+      "number": 73,
+      "text": "                value = value[1:-1]"
+    },
+    {
+      "number": 74,
+      "text": "            parsed[key] = value"
+    },
+    {
+      "number": 75,
+      "text": "        return parsed"
+    },
+    {
+      "number": 76,
+      "text": ""
+    },
+    {
+      "number": 77,
+      "text": "    def _workspace_dir(self) -> Path:"
+    },
+    {
+      "number": 78,
+      "text": "        return self.config.output_dir.resolve()"
+    },
+    {
+      "number": 79,
+      "text": ""
+    },
+    {
+      "number": 80,
+      "text": "    def _resolve_cwd(self, cwd: str = \"\") -> Path:"
+    },
+    {
+      "number": 81,
+      "text": "        workspace_dir = self._workspace_dir()"
+    },
+    {
+      "number": 82,
+      "text": "        if not cwd:"
+    },
+    {
+      "number": 83,
+      "text": "            return workspace_dir"
+    },
+    {
+      "number": 84,
+      "text": "        candidate = Path(cwd)"
+    },
+    {
+      "number": 85,
+      "text": "        if not candidate.is_absolute():"
+    },
+    {
+      "number": 86,
+      "text": "            candidate = workspace_dir / candidate"
+    },
+    {
+      "number": 87,
+      "text": "        resolved = candidate.resolve()"
+    },
+    {
+      "number": 88,
+      "text": "        try:"
+    },
+    {
+      "number": 89,
+      "text": "            resolved.relative_to(workspace_dir)"
+    },
+    {
+      "number": 90,
+      "text": "        except ValueError as exc:"
+    },
+    {
+      "number": 91,
+      "text": "            raise ValueError(f\"Command cwd must stay inside workspace: {resolved}\") from exc"
+    },
+    {
+      "number": 92,
+      "text": "        return resolved"
+    },
+    {
+      "number": 93,
+      "text": ""
+    },
+    {
+      "number": 94,
+      "text": "    def _task_metadata_path(self) -> Path:"
+    },
+    {
+      "number": 95,
+      "text": "        return self._workspace_dir() / self.config.task_metadata_filename"
+    },
+    {
+      "number": 96,
+      "text": ""
+    },
+    {
+      "number": 97,
+      "text": "    def _final_script_path(self) -> Path:"
+    },
+    {
+      "number": 98,
+      "text": "        return self._workspace_dir() / self.config.final_script_name"
+    },
+    {
+      "number": 99,
+      "text": ""
+    },
+    {
+      "number": 100,
+      "text": "    def _steps_dir(self) -> Path:"
+    },
+    {
+      "number": 101,
+      "text": "        return self._workspace_dir() / \"steps\""
+    },
+    {
+      "number": 102,
+      "text": ""
+    },
+    {
+      "number": 103,
+      "text": "    def _logs_dir(self) -> Path:"
+    },
+    {
+      "number": 104,
+      "text": "        return self._workspace_dir() / \"logs\""
+    },
+    {
+      "number": 105,
+      "text": ""
+    },
+    {
+      "number": 106,
+      "text": "    def _screenshots_dir(self) -> Path:"
+    },
+    {
+      "number": 107,
+      "text": "        return self._workspace_dir() / \"screenshots\""
+    },
+    {
+      "number": 108,
+      "text": ""
+    },
+    {
+      "number": 109,
+      "text": "    def _history_path(self) -> Path:"
+    },
+    {
+      "number": 110,
+      "text": "        return self._workspace_dir() / \"command_history.sh\""
+    },
+    {
+      "number": 111,
+      "text": ""
+    },
+    {
+      "number": 112,
+      "text": "    def _truncate(self, text: str, limit: int) -> str:"
+    },
+    {
+      "number": 113,
+      "text": "        if len(text) <= limit:"
+    },
+    {
+      "number": 114,
+      "text": "            return text"
+    },
+    {
+      "number": 115,
+      "text": "        omitted = len(text) - limit"
+    },
+    {
+      "number": 116,
+      "text": "        return f\"{text[:limit]}\\n\\n... [{omitted} characters omitted]\""
+    },
+    {
+      "number": 117,
+      "text": ""
+    },
+    {
+      "number": 118,
+      "text": "    def _recent_workspace_files(self) -> list[str]:"
+    },
+    {
+      "number": 119,
+      "text": "        workspace_dir = self._workspace_dir()"
+    },
+    {
+      "number": 120,
+      "text": "        files: list[Path] = [path for path in workspace_dir.rglob(\"*\") if path.is_file()]"
+    },
+    {
+      "number": 121,
+      "text": "        files.sort(key=lambda path: path.stat().st_mtime, reverse=True)"
+    },
+    {
+      "number": 122,
+      "text": "        recent = files[: self.config.recent_files_limit]"
+    },
+    {
+      "number": 123,
+      "text": "        return [str(path.relative_to(workspace_dir)) for path in recent]"
+    },
+    {
+      "number": 124,
+      "text": ""
+    },
+    {
+      "number": 125,
+      "text": "    def _recent_screenshots(self) -> list[Path]:"
+    },
+    {
+      "number": 126,
+      "text": "        screenshots_dir = self._screenshots_dir()"
+    },
+    {
+      "number": 127,
+      "text": "        if not screenshots_dir.exists():"
+    },
+    {
+      "number": 128,
+      "text": "            return []"
+    },
+    {
+      "number": 129,
+      "text": "        files = [path for path in screenshots_dir.rglob(\"*\") if path.is_file() and path.suffix.lower() in _IMAGE_SUFFIXES]"
+    },
+    {
+      "number": 130,
+      "text": "        files.sort(key=lambda path: path.stat().st_mtime, reverse=True)"
+    },
+    {
+      "number": 131,
+      "text": "        return files"
+    },
+    {
+      "number": 132,
+      "text": ""
+    },
+    {
+      "number": 133,
+      "text": "    def _persist_step_command(self, command: str) -> Path:"
+    },
+    {
+      "number": 134,
+      "text": "        self._steps_dir().mkdir(parents=True, exist_ok=True)"
+    },
+    {
+      "number": 135,
+      "text": "        step_path = self._steps_dir() / f\"step_{self._step_index:04d}.sh\""
+    },
+    {
+      "number": 136,
+      "text": "        step_path.write_text(command.rstrip() + \"\\n\", encoding=\"utf-8\")"
+    },
+    {
+      "number": 137,
+      "text": ""
+    },
+    {
+      "number": 138,
+      "text": "        history_path = self._history_path()"
+    },
+    {
+      "number": 139,
+      "text": "        with history_path.open(\"a\", encoding=\"utf-8\") as handle:"
+    },
+    {
+      "number": 140,
+      "text": "            handle.write(f\"# Step {self._step_index}\\n\")"
+    },
+    {
+      "number": 141,
+      "text": "            handle.write(command.rstrip())"
+    },
+    {
+      "number": 142,
+      "text": "            handle.write(\"\\n\\n\")"
+    },
+    {
+      "number": 143,
+      "text": "        return step_path"
+    },
+    {
+      "number": 144,
+      "text": ""
+    },
+    {
+      "number": 145,
+      "text": "    def _write_step_log(self, output: str) -> Path | None:"
+    },
+    {
+      "number": 146,
+      "text": "        if not output:"
+    },
+    {
+      "number": 147,
+      "text": "            return None"
+    },
+    {
+      "number": 148,
+      "text": "        self._logs_dir().mkdir(parents=True, exist_ok=True)"
+    },
+    {
+      "number": 149,
+      "text": "        log_path = self._logs_dir() / f\"step_{self._step_index:04d}.log\""
+    },
+    {
+      "number": 150,
+      "text": "        log_path.write_text(output, encoding=\"utf-8\")"
+    },
+    {
+      "number": 151,
+      "text": "        return log_path"
+    },
+    {
+      "number": 152,
+      "text": ""
+    },
+    {
+      "number": 153,
+      "text": "    def prepare(self, **kwargs) -> None:"
+    },
+    {
+      "number": 154,
+      "text": "        self._prepared_task = dict(kwargs)"
+    },
+    {
+      "number": 155,
+      "text": "        self._step_index = 0"
+    },
+    {
+      "number": 156,
+      "text": "        start_url = kwargs.get(\"start_url\") or self.config.start_url"
+    },
+    {
+      "number": 157,
+      "text": "        if start_url:"
+    },
+    {
+      "number": 158,
+      "text": "            self.config.start_url = str(start_url)"
+    },
+    {
+      "number": 159,
+      "text": "        workspace_dir = self._workspace_dir()"
+    },
+    {
+      "number": 160,
+      "text": "        workspace_dir.mkdir(parents=True, exist_ok=True)"
+    },
+    {
+      "number": 161,
+      "text": "        self._steps_dir().mkdir(parents=True, exist_ok=True)"
+    },
+    {
+      "number": 162,
+      "text": "        self._logs_dir().mkdir(parents=True, exist_ok=True)"
+    },
+    {
+      "number": 163,
+      "text": "        self._screenshots_dir().mkdir(parents=True, exist_ok=True)"
+    },
+    {
+      "number": 164,
+      "text": "        (workspace_dir / \".tmp\").mkdir(parents=True, exist_ok=True)"
+    },
+    {
+      "number": 165,
+      "text": "        self._task_metadata_path().write_text(json.dumps(kwargs, indent=2), encoding=\"utf-8\")"
+    },
+    {
+      "number": 166,
+      "text": ""
+    },
+    {
+      "number": 167,
+      "text": "    def _browser_env(self) -> dict[str, str]:"
+    },
+    {
+      "number": 168,
+      "text": "        \"\"\"Forward Browserbase / browser-mode hints to the subprocess.\"\"\""
+    },
+    {
+      "number": 169,
+      "text": "        env: dict[str, str] = {\"BROWSER_MODE\": str(self.config.browser_mode or \"browserbase\")}"
+    },
+    {
+      "number": 170,
+      "text": "        for var in (\"BROWSERBASE_API_KEY\", \"BROWSERBASE_PROJECT_ID\"):"
+    },
+    {
+      "number": 171,
+      "text": "            value = self._credential_env.get(var) or os.environ.get(var)"
+    },
+    {
+      "number": 172,
+      "text": "            if value:"
+    },
+    {
+      "number": 173,
+      "text": "                env[var] = value"
+    },
+    {
+      "number": 174,
+      "text": "        return env"
+    },
+    {
+      "number": 175,
+      "text": ""
+    },
+    {
+      "number": 176,
+      "text": "    def execute(self, action: dict[str, Any], cwd: str = \"\") -> dict[str, Any]:"
+    },
+    {
+      "number": 177,
+      "text": "        self._step_index += 1"
+    },
+    {
+      "number": 178,
+      "text": "        command = str("
+    },
+    {
+      "number": 179,
+      "text": "            action.get(\"command\") or action.get(\"bash_command\") or action.get(\"python_code\") or \"\""
+    },
+    {
+      "number": 180,
+      "text": "        ).strip()"
+    },
+    {
+      "number": 181,
+      "text": "        self._persist_step_command(command)"
+    },
+    {
+      "number": 182,
+      "text": "        resolved_cwd = self._resolve_cwd(cwd)"
+    },
+    {
+      "number": 183,
+      "text": ""
+    },
+    {
+      "number": 184,
+      "text": "        command_env = os.environ | self._credential_env | self._browser_env() | self.config.env | {"
+    },
+    {
+      "number": 185,
+      "text": "            \"WORKSPACE_DIR\": str(self._workspace_dir()),"
+    },
+    {
+      "number": 186,
+      "text": "            \"OM2W_TASK_JSON\": str(self._task_metadata_path()),"
+    },
+    {
+      "number": 187,
+      "text": "            \"FINAL_SCRIPT_PATH\": str(self._final_script_path()),"
+    },
+    {
+      "number": 188,
+      "text": "            \"TMPDIR\": str(self._workspace_dir() / \".tmp\"),"
+    },
+    {
+      "number": 189,
+      "text": "        }"
+    },
+    {
+      "number": 190,
+      "text": ""
+    },
+    {
+      "number": 191,
+      "text": "        try:"
+    },
+    {
+      "number": 192,
+      "text": "            result = subprocess.run("
+    },
+    {
+      "number": 193,
+      "text": "                command,"
+    },
+    {
+      "number": 194,
+      "text": "                shell=True,"
+    },
+    {
+      "number": 195,
+      "text": "                executable=self.config.shell,"
+    },
+    {
+      "number": 196,
+      "text": "                text=True,"
+    },
+    {
+      "number": 197,
+      "text": "                cwd=resolved_cwd,"
+    },
+    {
+      "number": 198,
+      "text": "                env=command_env,"
+    },
+    {
+      "number": 199,
+      "text": "                timeout=self.config.command_timeout_seconds,"
+    },
+    {
+      "number": 200,
+      "text": "                encoding=\"utf-8\","
+    },
+    {
+      "number": 201,
+      "text": "                errors=\"replace\","
+    },
+    {
+      "number": 202,
+      "text": "                stdout=subprocess.PIPE,"
+    },
+    {
+      "number": 203,
+      "text": "                stderr=subprocess.STDOUT,"
+    },
+    {
+      "number": 204,
+      "text": "            )"
+    },
+    {
+      "number": 205,
+      "text": "            output = result.stdout"
+    },
+    {
+      "number": 206,
+      "text": "            returncode = result.returncode"
+    },
+    {
+      "number": 207,
+      "text": "            exception_info = \"\""
+    },
+    {
+      "number": 208,
+      "text": "        except Exception as exc:"
+    },
+    {
+      "number": 209,
+      "text": "            raw_output = getattr(exc, \"output\", None)"
+    },
+    {
+      "number": 210,
+      "text": "            output = raw_output.decode(\"utf-8\", errors=\"replace\") if isinstance(raw_output, bytes) else (raw_output or \"\")"
+    },
+    {
+      "number": 211,
+      "text": "            returncode = -1"
+    },
+    {
+      "number": 212,
+      "text": "            exception_info = f\"An error occurred while executing the command: {exc}\""
+    },
+    {
+      "number": 213,
+      "text": ""
+    },
+    {
+      "number": 214,
+      "text": "        log_path = self._write_step_log(output)"
+    },
+    {
+      "number": 215,
+      "text": "        observation = self._capture_observation("
+    },
+    {
+      "number": 216,
+      "text": "            command=command,"
+    },
+    {
+      "number": 217,
+      "text": "            cwd=resolved_cwd,"
+    },
+    {
+      "number": 218,
+      "text": "            output=output,"
+    },
+    {
+      "number": 219,
+      "text": "            returncode=returncode,"
+    },
+    {
+      "number": 220,
+      "text": "            exception_info=exception_info,"
+    },
+    {
+      "number": 221,
+      "text": "            log_path=log_path,"
+    },
+    {
+      "number": 222,
+      "text": "        )"
+    },
+    {
+      "number": 223,
+      "text": "        return {"
+    },
+    {
+      "number": 224,
+      "text": "            \"output\": output,"
+    },
+    {
+      "number": 225,
+      "text": "            \"returncode\": returncode,"
+    },
+    {
+      "number": 226,
+      "text": "            \"exception_info\": exception_info,"
+    },
+    {
+      "number": 227,
+      "text": "            \"observation\": observation,"
+    },
+    {
+      "number": 228,
+      "text": "        }"
+    },
+    {
+      "number": 229,
+      "text": ""
+    },
+    {
+      "number": 230,
+      "text": "    def _capture_observation("
+    },
+    {
+      "number": 231,
+      "text": "        self,"
+    },
+    {
+      "number": 232,
+      "text": "        *,"
+    },
+    {
+      "number": 233,
+      "text": "        command: str,"
+    },
+    {
+      "number": 234,
+      "text": "        cwd: Path,"
+    },
+    {
+      "number": 235,
+      "text": "        output: str,"
+    },
+    {
+      "number": 236,
+      "text": "        returncode: int,"
+    },
+    {
+      "number": 237,
+      "text": "        exception_info: str,"
+    },
+    {
+      "number": 238,
+      "text": "        log_path: Path | None,"
+    },
+    {
+      "number": 239,
+      "text": "    ) -> dict[str, Any]:"
+    },
+    {
+      "number": 240,
+      "text": "        final_script_path = self._final_script_path()"
+    },
+    {
+      "number": 241,
+      "text": "        recent_screenshot_paths = self._recent_screenshots()"
+    },
+    {
+      "number": 242,
+      "text": "        latest_screenshot = recent_screenshot_paths[0] if recent_screenshot_paths else None"
+    },
+    {
+      "number": 243,
+      "text": "        final_script_preview = \"\""
+    },
+    {
+      "number": 244,
+      "text": "        if final_script_path.exists():"
+    },
+    {
+      "number": 245,
+      "text": "            final_script_preview = self._truncate("
+    },
+    {
+      "number": 246,
+      "text": "                final_script_path.read_text(encoding=\"utf-8\", errors=\"replace\"),"
+    },
+    {
+      "number": 247,
+      "text": "                self.config.final_script_preview_chars,"
+    },
+    {
+      "number": 248,
+      "text": "            )"
+    },
+    {
+      "number": 249,
+      "text": ""
+    },
+    {
+      "number": 250,
+      "text": "        workspace_dir = self._workspace_dir()"
+    },
+    {
+      "number": 251,
+      "text": "        recent_screenshots = [str(path.relative_to(workspace_dir)) for path in recent_screenshot_paths[:10]]"
+    },
+    {
+      "number": 252,
+      "text": "        return {"
+    },
+    {
+      "number": 253,
+      "text": "            \"success\": returncode == 0 and not exception_info,"
+    },
+    {
+      "number": 254,
+      "text": "            \"exception\": exception_info,"
+    },
+    {
+      "number": 255,
+      "text": "            \"command\": command,"
+    },
+    {
+      "number": 256,
+      "text": "            \"returncode\": returncode,"
+    },
+    {
+      "number": 257,
+      "text": "            \"workspace_dir\": str(workspace_dir),"
+    },
+    {
+      "number": 258,
+      "text": "            \"cwd\": str(cwd),"
+    },
+    {
+      "number": 259,
+      "text": "            \"url\": self.config.start_url or \"\","
+    },
+    {
+      "number": 260,
+      "text": "            \"title\": \"\","
+    },
+    {
+      "number": 261,
+      "text": "            \"aria_snapshot\": \"\","
+    },
+    {
+      "number": 262,
+      "text": "            \"console_output\": \"\","
+    },
+    {
+      "number": 263,
+      "text": "            \"recent_console\": \"\","
+    },
+    {
+      "number": 264,
+      "text": "            \"command_output\": self._truncate(output, self.config.output_truncation_chars),"
+    },
+    {
+      "number": 265,
+      "text": "            \"log_path\": str(log_path) if log_path is not None else \"\","
+    },
+    {
+      "number": 266,
+      "text": "            \"task_metadata_path\": str(self._task_metadata_path()),"
+    },
+    {
+      "number": 267,
+      "text": "            \"final_script_path\": str(final_script_path) if final_script_path.exists() else \"\","
+    },
+    {
+      "number": 268,
+      "text": "            \"final_script_exists\": final_script_path.exists(),"
+    },
+    {
+      "number": 269,
+      "text": "            \"final_script_preview\": final_script_preview,"
+    },
+    {
+      "number": 270,
+      "text": "            \"screenshot_path\": str(latest_screenshot) if latest_screenshot is not None else \"\","
+    },
+    {
+      "number": 271,
+      "text": "            \"recent_screenshots\": recent_screenshots,"
+    },
+    {
+      "number": 272,
+      "text": "            \"workspace_files\": self._recent_workspace_files(),"
+    },
+    {
+      "number": 273,
+      "text": "        }"
+    },
+    {
+      "number": 274,
+      "text": ""
+    },
+    {
+      "number": 275,
+      "text": "    def get_template_vars(self, **kwargs) -> dict[str, Any]:"
+    },
+    {
+      "number": 276,
+      "text": "        return {"
+    },
+    {
+      "number": 277,
+      "text": "            \"start_url\": self.config.start_url or \"\","
+    },
+    {
+      "number": 278,
+      "text": "            \"output_dir\": str(self._workspace_dir()),"
+    },
+    {
+      "number": 279,
+      "text": "            \"workspace_dir\": str(self._workspace_dir()),"
+    },
+    {
+      "number": 280,
+      "text": "            \"task_metadata_path\": str(self._task_metadata_path()),"
+    },
+    {
+      "number": 281,
+      "text": "            \"final_script_path\": str(self._final_script_path()),"
+    },
+    {
+      "number": 282,
+      "text": "            \"browser_mode\": self.config.browser_mode,"
+    },
+    {
+      "number": 283,
+      "text": "            **kwargs,"
+    },
+    {
+      "number": 284,
+      "text": "        }"
+    },
+    {
+      "number": 285,
+      "text": ""
+    },
+    {
+      "number": 286,
+      "text": "    def serialize(self) -> dict:"
+    },
+    {
+      "number": 287,
+      "text": "        return {"
+    },
+    {
+      "number": 288,
+      "text": "            \"environment\": {"
+    },
+    {
+      "number": 289,
+      "text": "                \"config\": self.config.model_dump(mode=\"json\"),"
+    },
+    {
+      "number": 290,
+      "text": "                \"environment_type\": f\"{self.__class__.__module__}.{self.__class__.__name__}\","
+    },
+    {
+      "number": 291,
+      "text": "                \"workspace_dir\": str(self._workspace_dir()),"
+    },
+    {
+      "number": 292,
+      "text": "            }"
+    },
+    {
+      "number": 293,
+      "text": "        }"
+    },
+    {
+      "number": 294,
+      "text": ""
+    },
+    {
+      "number": 295,
+      "text": "    def close(self) -> None:"
+    },
+    {
+      "number": 296,
+      "text": "        return None"
+    }
+  ],
+  "error": null
+}

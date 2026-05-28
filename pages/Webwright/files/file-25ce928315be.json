@@ -1,0 +1,60 @@
+{
+  "id": "file-25ce928315be",
+  "path": "src/webwright/config/model_claude.yaml",
+  "language": "yaml",
+  "lines": [
+    {
+      "number": 1,
+      "text": "# Model modifier — Claude (Anthropic) variant."
+    },
+    {
+      "number": 2,
+      "text": "#"
+    },
+    {
+      "number": 3,
+      "text": "# Stack on top of base.yaml:"
+    },
+    {
+      "number": 4,
+      "text": "#   python -m webwright.run.cli -c base.yaml -c model_claude.yaml ..."
+    },
+    {
+      "number": 5,
+      "text": "#"
+    },
+    {
+      "number": 6,
+      "text": "# Required env:"
+    },
+    {
+      "number": 7,
+      "text": "#   - ANTHROPIC_API_KEY (agent, image_qa, and self_reflection tools)"
+    },
+    {
+      "number": 8,
+      "text": ""
+    },
+    {
+      "number": 9,
+      "text": "model:"
+    },
+    {
+      "number": 10,
+      "text": "  model_class: anthropic"
+    },
+    {
+      "number": 11,
+      "text": "  model_name: claude-opus-4-7"
+    },
+    {
+      "number": 12,
+      "text": "  anthropic_endpoint: https://api.anthropic.com/v1/messages"
+    },
+    {
+      "number": 13,
+      "text": "  anthropic_version: \"2023-06-01\""
+    }
+  ],
+  "error": null
+}

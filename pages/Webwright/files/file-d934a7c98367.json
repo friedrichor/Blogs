@@ -1,0 +1,624 @@
+{
+  "id": "file-d934a7c98367",
+  "path": "src/webwright/run/cli.py",
+  "language": "python",
+  "lines": [
+    {
+      "number": 1,
+      "text": "from __future__ import annotations"
+    },
+    {
+      "number": 2,
+      "text": ""
+    },
+    {
+      "number": 3,
+      "text": "from datetime import datetime"
+    },
+    {
+      "number": 4,
+      "text": "from pathlib import Path"
+    },
+    {
+      "number": 5,
+      "text": "from typing import Any"
+    },
+    {
+      "number": 6,
+      "text": ""
+    },
+    {
+      "number": 7,
+      "text": "import typer"
+    },
+    {
+      "number": 8,
+      "text": "from rich.console import Console"
+    },
+    {
+      "number": 9,
+      "text": ""
+    },
+    {
+      "number": 10,
+      "text": "from webwright.agents import get_agent"
+    },
+    {
+      "number": 11,
+      "text": "from webwright.config import get_config_from_spec, snapshot_config_specs"
+    },
+    {
+      "number": 12,
+      "text": "from webwright.environments import get_environment"
+    },
+    {
+      "number": 13,
+      "text": "from webwright.models import get_model"
+    },
+    {
+      "number": 14,
+      "text": "from webwright.utils.serialize import UNSET, recursive_merge"
+    },
+    {
+      "number": 15,
+      "text": ""
+    },
+    {
+      "number": 16,
+      "text": ""
+    },
+    {
+      "number": 17,
+      "text": "DEFAULT_CONFIGS = [\"base.yaml\", \"model_openai.yaml\"]"
+    },
+    {
+      "number": 18,
+      "text": ""
+    },
+    {
+      "number": 19,
+      "text": "app = typer.Typer(no_args_is_help=True)"
+    },
+    {
+      "number": 20,
+      "text": "console = Console(highlight=False)"
+    },
+    {
+      "number": 21,
+      "text": ""
+    },
+    {
+      "number": 22,
+      "text": ""
+    },
+    {
+      "number": 23,
+      "text": "def _timestamped_output_dir(base_dir: str | Path | None, task_id: str | None) -> Path:"
+    },
+    {
+      "number": 24,
+      "text": "    base = Path(base_dir or \"outputs\").expanduser()"
+    },
+    {
+      "number": 25,
+      "text": "    stamp = datetime.now().strftime(\"%Y%m%d_%H%M%S\")"
+    },
+    {
+      "number": 26,
+      "text": "    suffix = task_id or \"adhoc\""
+    },
+    {
+      "number": 27,
+      "text": "    return base / f\"{suffix}_{stamp}\""
+    },
+    {
+      "number": 28,
+      "text": ""
+    },
+    {
+      "number": 29,
+      "text": ""
+    },
+    {
+      "number": 30,
+      "text": "def run_one("
+    },
+    {
+      "number": 31,
+      "text": "    *,"
+    },
+    {
+      "number": 32,
+      "text": "    task: str | None = None,"
+    },
+    {
+      "number": 33,
+      "text": "    task_id: str | None = None,"
+    },
+    {
+      "number": 34,
+      "text": "    start_url: str | None = None,"
+    },
+    {
+      "number": 35,
+      "text": "    config_spec: list[str] | None = None,"
+    },
+    {
+      "number": 36,
+      "text": "    output_dir: Path | None = None,"
+    },
+    {
+      "number": 37,
+      "text": "    resolved_output_dir: Path | None = None,"
+    },
+    {
+      "number": 38,
+      "text": "    debug: bool = False,"
+    },
+    {
+      "number": 39,
+      "text": "    snapshot_config: bool = True,"
+    },
+    {
+      "number": 40,
+      "text": ") -> Any:"
+    },
+    {
+      "number": 41,
+      "text": "    config_spec = config_spec or DEFAULT_CONFIGS"
+    },
+    {
+      "number": 42,
+      "text": "    configs = [get_config_from_spec(spec) for spec in config_spec]"
+    },
+    {
+      "number": 43,
+      "text": "    config = recursive_merge(*configs)"
+    },
+    {
+      "number": 44,
+      "text": ""
+    },
+    {
+      "number": 45,
+      "text": "    run_config = config.get(\"run\", {})"
+    },
+    {
+      "number": 46,
+      "text": "    resolved_task_id = task_id or run_config.get(\"task_id\")"
+    },
+    {
+      "number": 47,
+      "text": "    resolved_task = task or run_config.get(\"task\")"
+    },
+    {
+      "number": 48,
+      "text": "    resolved_start_url = start_url or run_config.get(\"start_url\")"
+    },
+    {
+      "number": 49,
+      "text": ""
+    },
+    {
+      "number": 50,
+      "text": "    if not resolved_task:"
+    },
+    {
+      "number": 51,
+      "text": "        raise ValueError(\"A task is required. Use --task.\")"
+    },
+    {
+      "number": 52,
+      "text": ""
+    },
+    {
+      "number": 53,
+      "text": "    resolved_output_dir = resolved_output_dir or _timestamped_output_dir("
+    },
+    {
+      "number": 54,
+      "text": "        output_dir or config.get(\"environment\", {}).get(\"output_dir\") or \"outputs\","
+    },
+    {
+      "number": 55,
+      "text": "        resolved_task_id,"
+    },
+    {
+      "number": 56,
+      "text": "    )"
+    },
+    {
+      "number": 57,
+      "text": "    if snapshot_config:"
+    },
+    {
+      "number": 58,
+      "text": "        snapshot_config_specs(config_spec, resolved_output_dir, merged_config=config)"
+    },
+    {
+      "number": 59,
+      "text": ""
+    },
+    {
+      "number": 60,
+      "text": "    config = recursive_merge("
+    },
+    {
+      "number": 61,
+      "text": "        config,"
+    },
+    {
+      "number": 62,
+      "text": "        {"
+    },
+    {
+      "number": 63,
+      "text": "            \"run\": {"
+    },
+    {
+      "number": 64,
+      "text": "                \"task\": resolved_task,"
+    },
+    {
+      "number": 65,
+      "text": "                \"task_id\": resolved_task_id or UNSET,"
+    },
+    {
+      "number": 66,
+      "text": "                \"start_url\": resolved_start_url or UNSET,"
+    },
+    {
+      "number": 67,
+      "text": "            },"
+    },
+    {
+      "number": 68,
+      "text": "            \"environment\": {"
+    },
+    {
+      "number": 69,
+      "text": "                \"output_dir\": str(resolved_output_dir),"
+    },
+    {
+      "number": 70,
+      "text": "                \"start_url\": resolved_start_url or UNSET,"
+    },
+    {
+      "number": 71,
+      "text": "                \"headless\": False if debug else UNSET,"
+    },
+    {
+      "number": 72,
+      "text": "                \"devtools\": True if debug else UNSET,"
+    },
+    {
+      "number": 73,
+      "text": "                \"keep_open_on_exit\": True if debug else UNSET,"
+    },
+    {
+      "number": 74,
+      "text": "                \"prompt_before_close\": True if debug else UNSET,"
+    },
+    {
+      "number": 75,
+      "text": "                \"slow_mo_ms\": 250 if debug else UNSET,"
+    },
+    {
+      "number": 76,
+      "text": "            },"
+    },
+    {
+      "number": 77,
+      "text": "            \"model\": {"
+    },
+    {
+      "number": 78,
+      "text": "                \"error_log_path\": str(resolved_output_dir / \"runtime_errors.jsonl\"),"
+    },
+    {
+      "number": 79,
+      "text": "            },"
+    },
+    {
+      "number": 80,
+      "text": "            \"agent\": {"
+    },
+    {
+      "number": 81,
+      "text": "                \"output_path\": str(resolved_output_dir / \"trajectory.json\"),"
+    },
+    {
+      "number": 82,
+      "text": "            },"
+    },
+    {
+      "number": 83,
+      "text": "        },"
+    },
+    {
+      "number": 84,
+      "text": "    )"
+    },
+    {
+      "number": 85,
+      "text": ""
+    },
+    {
+      "number": 86,
+      "text": "    model = get_model(config.get(\"model\", {}))"
+    },
+    {
+      "number": 87,
+      "text": "    env = get_environment(config.get(\"environment\", {}))"
+    },
+    {
+      "number": 88,
+      "text": "    agent = get_agent(model, env, config.get(\"agent\", {}), default_type=\"default\")"
+    },
+    {
+      "number": 89,
+      "text": ""
+    },
+    {
+      "number": 90,
+      "text": "    console.print(f\"Running task in [bold green]{resolved_output_dir}[/bold green]\")"
+    },
+    {
+      "number": 91,
+      "text": "    run_exception: Exception | None = None"
+    },
+    {
+      "number": 92,
+      "text": "    close_exception: Exception | None = None"
+    },
+    {
+      "number": 93,
+      "text": "    result: dict[str, Any] = {}"
+    },
+    {
+      "number": 94,
+      "text": "    try:"
+    },
+    {
+      "number": 95,
+      "text": "        env.prepare("
+    },
+    {
+      "number": 96,
+      "text": "            task=resolved_task,"
+    },
+    {
+      "number": 97,
+      "text": "            task_id=resolved_task_id,"
+    },
+    {
+      "number": 98,
+      "text": "            start_url=resolved_start_url,"
+    },
+    {
+      "number": 99,
+      "text": "        )"
+    },
+    {
+      "number": 100,
+      "text": "        result = agent.run("
+    },
+    {
+      "number": 101,
+      "text": "            resolved_task,"
+    },
+    {
+      "number": 102,
+      "text": "            task_id=resolved_task_id or \"\","
+    },
+    {
+      "number": 103,
+      "text": "            start_url=resolved_start_url or \"\","
+    },
+    {
+      "number": 104,
+      "text": "        )"
+    },
+    {
+      "number": 105,
+      "text": "    except Exception as exc:"
+    },
+    {
+      "number": 106,
+      "text": "        run_exception = exc"
+    },
+    {
+      "number": 107,
+      "text": "        if getattr(agent, \"messages\", None):"
+    },
+    {
+      "number": 108,
+      "text": "            result = dict(agent.messages[-1].get(\"extra\", {}))"
+    },
+    {
+      "number": 109,
+      "text": "        result.setdefault(\"exit_status\", type(exc).__name__)"
+    },
+    {
+      "number": 110,
+      "text": "        result.setdefault(\"submission\", \"\")"
+    },
+    {
+      "number": 111,
+      "text": "        result.setdefault(\"final_response\", \"\")"
+    },
+    {
+      "number": 112,
+      "text": "        result[\"run_exception\"] = str(exc)"
+    },
+    {
+      "number": 113,
+      "text": "    finally:"
+    },
+    {
+      "number": 114,
+      "text": "        try:"
+    },
+    {
+      "number": 115,
+      "text": "            env.close()"
+    },
+    {
+      "number": 116,
+      "text": "        except Exception as exc:"
+    },
+    {
+      "number": 117,
+      "text": "            close_exception = exc"
+    },
+    {
+      "number": 118,
+      "text": "            result.setdefault(\"exit_status\", type(exc).__name__)"
+    },
+    {
+      "number": 119,
+      "text": "            result.setdefault(\"submission\", \"\")"
+    },
+    {
+      "number": 120,
+      "text": "            result.setdefault(\"final_response\", \"\")"
+    },
+    {
+      "number": 121,
+      "text": "            result.setdefault(\"run_exception\", str(exc))"
+    },
+    {
+      "number": 122,
+      "text": "            result[\"close_exception\"] = str(exc)"
+    },
+    {
+      "number": 123,
+      "text": "            if run_exception is None:"
+    },
+    {
+      "number": 124,
+      "text": "                run_exception = exc"
+    },
+    {
+      "number": 125,
+      "text": "    result[\"_output_dir\"] = str(resolved_output_dir)"
+    },
+    {
+      "number": 126,
+      "text": "    if close_exception is not None:"
+    },
+    {
+      "number": 127,
+      "text": "        result[\"_close_exception\"] = str(close_exception)"
+    },
+    {
+      "number": 128,
+      "text": "    console.print(result.get(\"final_response\") or result.get(\"submission\") or \"Task finished.\")"
+    },
+    {
+      "number": 129,
+      "text": "    if run_exception is not None:"
+    },
+    {
+      "number": 130,
+      "text": "        raise run_exception"
+    },
+    {
+      "number": 131,
+      "text": "    return result"
+    },
+    {
+      "number": 132,
+      "text": ""
+    },
+    {
+      "number": 133,
+      "text": ""
+    },
+    {
+      "number": 134,
+      "text": "@app.command()"
+    },
+    {
+      "number": 135,
+      "text": "def main("
+    },
+    {
+      "number": 136,
+      "text": "    task: str = typer.Option(..., \"-t\", \"--task\", help=\"Natural language task description.\"),"
+    },
+    {
+      "number": 137,
+      "text": "    task_id: str | None = typer.Option(None, \"--task-id\", help=\"Optional identifier used in the output directory name.\"),"
+    },
+    {
+      "number": 138,
+      "text": "    start_url: str | None = typer.Option(None, \"--start-url\", help=\"Optional starting URL for the task.\"),"
+    },
+    {
+      "number": 139,
+      "text": "    config_spec: list[str] = typer.Option(DEFAULT_CONFIGS, \"-c\", \"--config\"),"
+    },
+    {
+      "number": 140,
+      "text": "    output_dir: Path | None = typer.Option(None, \"-o\", \"--output-dir\"),"
+    },
+    {
+      "number": 141,
+      "text": "    debug: bool = typer.Option(False, \"--debug\", help=\"Launch headed local Playwright with devtools and keep it open for inspection.\"),"
+    },
+    {
+      "number": 142,
+      "text": ") -> Any:"
+    },
+    {
+      "number": 143,
+      "text": "    return run_one("
+    },
+    {
+      "number": 144,
+      "text": "        task=task,"
+    },
+    {
+      "number": 145,
+      "text": "        task_id=task_id,"
+    },
+    {
+      "number": 146,
+      "text": "        start_url=start_url,"
+    },
+    {
+      "number": 147,
+      "text": "        config_spec=config_spec,"
+    },
+    {
+      "number": 148,
+      "text": "        output_dir=output_dir,"
+    },
+    {
+      "number": 149,
+      "text": "        debug=debug,"
+    },
+    {
+      "number": 150,
+      "text": "    )"
+    },
+    {
+      "number": 151,
+      "text": ""
+    },
+    {
+      "number": 152,
+      "text": ""
+    },
+    {
+      "number": 153,
+      "text": "if __name__ == \"__main__\":"
+    },
+    {
+      "number": 154,
+      "text": "    app()"
+    }
+  ],
+  "error": null
+}

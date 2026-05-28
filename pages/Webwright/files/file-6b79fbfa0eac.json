@@ -1,0 +1,1064 @@
+{
+  "id": "file-6b79fbfa0eac",
+  "path": "assets/task_showcase/app.py",
+  "language": "python",
+  "lines": [
+    {
+      "number": 1,
+      "text": "\"\"\"Flask dashboard for repeatable task-showcase JSON."
+    },
+    {
+      "number": 2,
+      "text": ""
+    },
+    {
+      "number": 3,
+      "text": "Each task lives under ``tasks/<short_id>/``. The only required files are:"
+    },
+    {
+      "number": 4,
+      "text": ""
+    },
+    {
+      "number": 5,
+      "text": "    task.json    – metadata written by the build script"
+    },
+    {
+      "number": 6,
+      "text": "    report.json  – structured output consumed by the generic template"
+    },
+    {
+      "number": 7,
+      "text": ""
+    },
+    {
+      "number": 8,
+      "text": "Optional run artifacts such as ``final_script_log.txt``, ``steps.jsonl``, and"
+    },
+    {
+      "number": 9,
+      "text": "``screenshots/`` are used when present, but the renderer does not require them."
+    },
+    {
+      "number": 10,
+      "text": ""
+    },
+    {
+      "number": 11,
+      "text": "Routes:"
+    },
+    {
+      "number": 12,
+      "text": "    /                              – dashboard listing available tasks"
+    },
+    {
+      "number": 13,
+      "text": "    /task/<short_id>               – per-task report view"
+    },
+    {
+      "number": 14,
+      "text": "    /task/<short_id>/screenshot/.. – optional screenshot file"
+    },
+    {
+      "number": 15,
+      "text": "\"\"\""
+    },
+    {
+      "number": 16,
+      "text": "from __future__ import annotations"
+    },
+    {
+      "number": 17,
+      "text": ""
+    },
+    {
+      "number": 18,
+      "text": "import argparse"
+    },
+    {
+      "number": 19,
+      "text": "import json"
+    },
+    {
+      "number": 20,
+      "text": "import os"
+    },
+    {
+      "number": 21,
+      "text": "import re"
+    },
+    {
+      "number": 22,
+      "text": "from pathlib import Path"
+    },
+    {
+      "number": 23,
+      "text": ""
+    },
+    {
+      "number": 24,
+      "text": "from flask import Flask, abort, render_template, send_from_directory"
+    },
+    {
+      "number": 25,
+      "text": ""
+    },
+    {
+      "number": 26,
+      "text": "ROOT = Path(__file__).resolve().parent"
+    },
+    {
+      "number": 27,
+      "text": ""
+    },
+    {
+      "number": 28,
+      "text": ""
+    },
+    {
+      "number": 29,
+      "text": "def _resolve_tasks_dir(value: str | Path | None = None) -> Path:"
+    },
+    {
+      "number": 30,
+      "text": "    if value is None:"
+    },
+    {
+      "number": 31,
+      "text": "        value = os.environ.get(\"TASK_SHOWCASE_TASKS_DIR\") or ROOT / \"tasks\""
+    },
+    {
+      "number": 32,
+      "text": "    return Path(value).expanduser().resolve()"
+    },
+    {
+      "number": 33,
+      "text": ""
+    },
+    {
+      "number": 34,
+      "text": ""
+    },
+    {
+      "number": 35,
+      "text": "TASKS_DIR = _resolve_tasks_dir()"
+    },
+    {
+      "number": 36,
+      "text": ""
+    },
+    {
+      "number": 37,
+      "text": "app = Flask(__name__)"
+    },
+    {
+      "number": 38,
+      "text": ""
+    },
+    {
+      "number": 39,
+      "text": ""
+    },
+    {
+      "number": 40,
+      "text": "# ---------- task metadata ----------"
+    },
+    {
+      "number": 41,
+      "text": ""
+    },
+    {
+      "number": 42,
+      "text": "def list_tasks() -> list[dict]:"
+    },
+    {
+      "number": 43,
+      "text": "    out: list[dict] = []"
+    },
+    {
+      "number": 44,
+      "text": "    if not TASKS_DIR.exists():"
+    },
+    {
+      "number": 45,
+      "text": "        return out"
+    },
+    {
+      "number": 46,
+      "text": "    for d in sorted(TASKS_DIR.iterdir()):"
+    },
+    {
+      "number": 47,
+      "text": "        info_path = d / \"task.json\""
+    },
+    {
+      "number": 48,
+      "text": "        if not info_path.exists():"
+    },
+    {
+      "number": 49,
+      "text": "            continue"
+    },
+    {
+      "number": 50,
+      "text": "        info = json.loads(info_path.read_text())"
+    },
+    {
+      "number": 51,
+      "text": "        info[\"short_id\"] = d.name"
+    },
+    {
+      "number": 52,
+      "text": "        out.append(info)"
+    },
+    {
+      "number": 53,
+      "text": "    return out"
+    },
+    {
+      "number": 54,
+      "text": ""
+    },
+    {
+      "number": 55,
+      "text": ""
+    },
+    {
+      "number": 56,
+      "text": "# ---------- log + steps parsing ----------"
+    },
+    {
+      "number": 57,
+      "text": ""
+    },
+    {
+      "number": 58,
+      "text": "_STEP_LINE = re.compile(r\"^step\\s+(\\d+)\\s+action:\\s*(.*)$\", re.IGNORECASE)"
+    },
+    {
+      "number": 59,
+      "text": "_FINAL_LINE = re.compile(r\"^Final Response:\\s*(.*)$\", re.IGNORECASE)"
+    },
+    {
+      "number": 60,
+      "text": "_URL_RE = re.compile(r\"https?://[^\\s'\\\"<>;,)]+\")"
+    },
+    {
+      "number": 61,
+      "text": "_TRAIL_PUNCT = re.compile(r\"[.,;:)\\]]+$\")"
+    },
+    {
+      "number": 62,
+      "text": ""
+    },
+    {
+      "number": 63,
+      "text": ""
+    },
+    {
+      "number": 64,
+      "text": "def _clean_url(u: str) -> str:"
+    },
+    {
+      "number": 65,
+      "text": "    return _TRAIL_PUNCT.sub(\"\", u)"
+    },
+    {
+      "number": 66,
+      "text": ""
+    },
+    {
+      "number": 67,
+      "text": ""
+    },
+    {
+      "number": 68,
+      "text": "def parse_log(log_path: Path) -> tuple[dict[int, str], str]:"
+    },
+    {
+      "number": 69,
+      "text": "    \"\"\"Return ({step_num: action_text}, final_response).\"\"\""
+    },
+    {
+      "number": 70,
+      "text": "    steps: dict[int, str] = {}"
+    },
+    {
+      "number": 71,
+      "text": "    final = \"\""
+    },
+    {
+      "number": 72,
+      "text": "    if not log_path.exists():"
+    },
+    {
+      "number": 73,
+      "text": "        return steps, final"
+    },
+    {
+      "number": 74,
+      "text": "    for raw in log_path.read_text(encoding=\"utf-8\").splitlines():"
+    },
+    {
+      "number": 75,
+      "text": "        m = _STEP_LINE.match(raw.strip())"
+    },
+    {
+      "number": 76,
+      "text": "        if m:"
+    },
+    {
+      "number": 77,
+      "text": "            steps[int(m.group(1))] = m.group(2).strip()"
+    },
+    {
+      "number": 78,
+      "text": "            continue"
+    },
+    {
+      "number": 79,
+      "text": "        f = _FINAL_LINE.match(raw.strip())"
+    },
+    {
+      "number": 80,
+      "text": "        if f:"
+    },
+    {
+      "number": 81,
+      "text": "            final = f.group(1).strip()"
+    },
+    {
+      "number": 82,
+      "text": "    return steps, final"
+    },
+    {
+      "number": 83,
+      "text": ""
+    },
+    {
+      "number": 84,
+      "text": ""
+    },
+    {
+      "number": 85,
+      "text": "def parse_steps_jsonl(path: Path) -> list[dict]:"
+    },
+    {
+      "number": 86,
+      "text": "    rows: list[dict] = []"
+    },
+    {
+      "number": 87,
+      "text": "    if not path.exists():"
+    },
+    {
+      "number": 88,
+      "text": "        return rows"
+    },
+    {
+      "number": 89,
+      "text": "    for line in path.read_text(encoding=\"utf-8\").splitlines():"
+    },
+    {
+      "number": 90,
+      "text": "        line = line.strip()"
+    },
+    {
+      "number": 91,
+      "text": "        if not line:"
+    },
+    {
+      "number": 92,
+      "text": "            continue"
+    },
+    {
+      "number": 93,
+      "text": "        try:"
+    },
+    {
+      "number": 94,
+      "text": "            rows.append(json.loads(line))"
+    },
+    {
+      "number": 95,
+      "text": "        except json.JSONDecodeError:"
+    },
+    {
+      "number": 96,
+      "text": "            continue"
+    },
+    {
+      "number": 97,
+      "text": "    for r in rows:"
+    },
+    {
+      "number": 98,
+      "text": "        try:"
+    },
+    {
+      "number": 99,
+      "text": "            r[\"step_num\"] = int(r.get(\"step_num\", 0))"
+    },
+    {
+      "number": 100,
+      "text": "        except (TypeError, ValueError):"
+    },
+    {
+      "number": 101,
+      "text": "            r[\"step_num\"] = 0"
+    },
+    {
+      "number": 102,
+      "text": "    rows.sort(key=lambda r: r[\"step_num\"])"
+    },
+    {
+      "number": 103,
+      "text": "    return rows"
+    },
+    {
+      "number": 104,
+      "text": ""
+    },
+    {
+      "number": 105,
+      "text": ""
+    },
+    {
+      "number": 106,
+      "text": "def build_steps(task_dir: Path) -> tuple[list[dict], str]:"
+    },
+    {
+      "number": 107,
+      "text": "    log_steps, final = parse_log(task_dir / \"final_script_log.txt\")"
+    },
+    {
+      "number": 108,
+      "text": "    raw_rows = parse_steps_jsonl(task_dir / \"steps.jsonl\")"
+    },
+    {
+      "number": 109,
+      "text": ""
+    },
+    {
+      "number": 110,
+      "text": "    out: list[dict] = []"
+    },
+    {
+      "number": 111,
+      "text": "    for row in raw_rows:"
+    },
+    {
+      "number": 112,
+      "text": "        n = row[\"step_num\"]"
+    },
+    {
+      "number": 113,
+      "text": "        action_text = log_steps.get(n) or row.get(\"action\", \"\").strip()"
+    },
+    {
+      "number": 114,
+      "text": "        # the first row of steps.jsonl sometimes contains the full multi-line"
+    },
+    {
+      "number": 115,
+      "text": "        # log dump. If so, take only its first \"step N action:\" line."
+    },
+    {
+      "number": 116,
+      "text": "        if action_text and \"\\nstep \" in action_text.lower():"
+    },
+    {
+      "number": 117,
+      "text": "            first_line = action_text.splitlines()[0]"
+    },
+    {
+      "number": 118,
+      "text": "            m = _STEP_LINE.match(first_line)"
+    },
+    {
+      "number": 119,
+      "text": "            if m:"
+    },
+    {
+      "number": 120,
+      "text": "                action_text = m.group(2).strip()"
+    },
+    {
+      "number": 121,
+      "text": "        shot = row.get(\"screenshot\") or \"\""
+    },
+    {
+      "number": 122,
+      "text": "        if shot:"
+    },
+    {
+      "number": 123,
+      "text": "            shot = Path(shot).name"
+    },
+    {
+      "number": 124,
+      "text": "        urls = [_clean_url(u) for u in _URL_RE.findall(action_text)]"
+    },
+    {
+      "number": 125,
+      "text": "        seen: set[str] = set()"
+    },
+    {
+      "number": 126,
+      "text": "        urls = [u for u in urls if not (u in seen or seen.add(u))]"
+    },
+    {
+      "number": 127,
+      "text": "        out.append({"
+    },
+    {
+      "number": 128,
+      "text": "            \"step_num\": n,"
+    },
+    {
+      "number": 129,
+      "text": "            \"action\": action_text,"
+    },
+    {
+      "number": 130,
+      "text": "            \"screenshot\": shot,"
+    },
+    {
+      "number": 131,
+      "text": "            \"urls\": urls,"
+    },
+    {
+      "number": 132,
+      "text": "        })"
+    },
+    {
+      "number": 133,
+      "text": "    return out, final"
+    },
+    {
+      "number": 134,
+      "text": ""
+    },
+    {
+      "number": 135,
+      "text": ""
+    },
+    {
+      "number": 136,
+      "text": "def _host(u: str) -> str:"
+    },
+    {
+      "number": 137,
+      "text": "    from urllib.parse import urlparse"
+    },
+    {
+      "number": 138,
+      "text": "    try:"
+    },
+    {
+      "number": 139,
+      "text": "        return urlparse(u).netloc.replace(\"www.\", \"\") or u"
+    },
+    {
+      "number": 140,
+      "text": "    except Exception:"
+    },
+    {
+      "number": 141,
+      "text": "        return u"
+    },
+    {
+      "number": 142,
+      "text": ""
+    },
+    {
+      "number": 143,
+      "text": ""
+    },
+    {
+      "number": 144,
+      "text": "def collect_pages(steps: list[dict], fallback_site: str | None) -> list[dict]:"
+    },
+    {
+      "number": 145,
+      "text": "    \"\"\"Build a unique URL list across all steps for the Pages grid.\"\"\""
+    },
+    {
+      "number": 146,
+      "text": "    pages: list[dict] = []"
+    },
+    {
+      "number": 147,
+      "text": "    seen: set[str] = set()"
+    },
+    {
+      "number": 148,
+      "text": "    for s in steps:"
+    },
+    {
+      "number": 149,
+      "text": "        for u in s[\"urls\"]:"
+    },
+    {
+      "number": 150,
+      "text": "            if u in seen:"
+    },
+    {
+      "number": 151,
+      "text": "                continue"
+    },
+    {
+      "number": 152,
+      "text": "            seen.add(u)"
+    },
+    {
+      "number": 153,
+      "text": "            from urllib.parse import urlparse"
+    },
+    {
+      "number": 154,
+      "text": "            try:"
+    },
+    {
+      "number": 155,
+      "text": "                pu = urlparse(u)"
+    },
+    {
+      "number": 156,
+      "text": "                tail = pu.path.rstrip(\"/\").split(\"/\")[-1] or pu.netloc"
+    },
+    {
+      "number": 157,
+      "text": "                title = f\"{pu.netloc}/{tail}\" if tail != pu.netloc else pu.netloc"
+    },
+    {
+      "number": 158,
+      "text": "            except Exception:"
+    },
+    {
+      "number": 159,
+      "text": "                title = u"
+    },
+    {
+      "number": 160,
+      "text": "            pages.append({"
+    },
+    {
+      "number": 161,
+      "text": "                \"step\": s[\"step_num\"],"
+    },
+    {
+      "number": 162,
+      "text": "                \"url\": u,"
+    },
+    {
+      "number": 163,
+      "text": "                \"title\": title,"
+    },
+    {
+      "number": 164,
+      "text": "                \"host\": _host(u),"
+    },
+    {
+      "number": 165,
+      "text": "                \"screenshot\": s.get(\"screenshot\") or \"\","
+    },
+    {
+      "number": 166,
+      "text": "            })"
+    },
+    {
+      "number": 167,
+      "text": "    if not pages and fallback_site:"
+    },
+    {
+      "number": 168,
+      "text": "        pages.append({"
+    },
+    {
+      "number": 169,
+      "text": "            \"step\": 1, \"url\": fallback_site, \"title\": fallback_site,"
+    },
+    {
+      "number": 170,
+      "text": "            \"host\": _host(fallback_site), \"screenshot\": \"\","
+    },
+    {
+      "number": 171,
+      "text": "        })"
+    },
+    {
+      "number": 172,
+      "text": "    return pages"
+    },
+    {
+      "number": 173,
+      "text": ""
+    },
+    {
+      "number": 174,
+      "text": ""
+    },
+    {
+      "number": 175,
+      "text": "def collect_sources(pages: list[dict]) -> list[dict]:"
+    },
+    {
+      "number": 176,
+      "text": "    \"\"\"Group pages by host -> [{host, count, sample_url}].\"\"\""
+    },
+    {
+      "number": 177,
+      "text": "    from collections import OrderedDict"
+    },
+    {
+      "number": 178,
+      "text": "    grouped: \"OrderedDict[str, dict]\" = OrderedDict()"
+    },
+    {
+      "number": 179,
+      "text": "    for p in pages:"
+    },
+    {
+      "number": 180,
+      "text": "        h = p[\"host\"]"
+    },
+    {
+      "number": 181,
+      "text": "        if h not in grouped:"
+    },
+    {
+      "number": 182,
+      "text": "            grouped[h] = {\"host\": h, \"count\": 0, \"sample_url\": p[\"url\"]}"
+    },
+    {
+      "number": 183,
+      "text": "        grouped[h][\"count\"] += 1"
+    },
+    {
+      "number": 184,
+      "text": "    return list(grouped.values())"
+    },
+    {
+      "number": 185,
+      "text": ""
+    },
+    {
+      "number": 186,
+      "text": ""
+    },
+    {
+      "number": 187,
+      "text": "# ---------- routes ----------"
+    },
+    {
+      "number": 188,
+      "text": ""
+    },
+    {
+      "number": 189,
+      "text": "@app.route(\"/\")"
+    },
+    {
+      "number": 190,
+      "text": "def index():"
+    },
+    {
+      "number": 191,
+      "text": "    tasks = list_tasks()"
+    },
+    {
+      "number": 192,
+      "text": "    return render_template(\"dashboard.html\", tasks=tasks)"
+    },
+    {
+      "number": 193,
+      "text": ""
+    },
+    {
+      "number": 194,
+      "text": ""
+    },
+    {
+      "number": 195,
+      "text": "@app.route(\"/task/<short_id>\")"
+    },
+    {
+      "number": 196,
+      "text": "def task_view(short_id: str):"
+    },
+    {
+      "number": 197,
+      "text": "    task_dir = TASKS_DIR / short_id"
+    },
+    {
+      "number": 198,
+      "text": "    info_path = task_dir / \"task.json\""
+    },
+    {
+      "number": 199,
+      "text": "    if not info_path.exists():"
+    },
+    {
+      "number": 200,
+      "text": "        abort(404)"
+    },
+    {
+      "number": 201,
+      "text": "    info = json.loads(info_path.read_text())"
+    },
+    {
+      "number": 202,
+      "text": "    info[\"short_id\"] = short_id"
+    },
+    {
+      "number": 203,
+      "text": "    steps, final = build_steps(task_dir)"
+    },
+    {
+      "number": 204,
+      "text": "    # last-modified timestamp of the run for the \"Updated\" line"
+    },
+    {
+      "number": 205,
+      "text": "    import datetime as _dt"
+    },
+    {
+      "number": 206,
+      "text": "    log_path = task_dir / \"final_script_log.txt\""
+    },
+    {
+      "number": 207,
+      "text": "    if log_path.exists():"
+    },
+    {
+      "number": 208,
+      "text": "        ts = _dt.datetime.fromtimestamp(log_path.stat().st_mtime)"
+    },
+    {
+      "number": 209,
+      "text": "        updated = ts.strftime(\"%-m/%-d/%Y, %-I:%M:%S %p\")"
+    },
+    {
+      "number": 210,
+      "text": "    else:"
+    },
+    {
+      "number": 211,
+      "text": "        updated = \"\""
+    },
+    {
+      "number": 212,
+      "text": "    # Per-task structured report lives next to the run artifacts."
+    },
+    {
+      "number": 213,
+      "text": "    report_path = task_dir / \"report.json\""
+    },
+    {
+      "number": 214,
+      "text": "    if report_path.exists():"
+    },
+    {
+      "number": 215,
+      "text": "        report = json.loads(report_path.read_text())"
+    },
+    {
+      "number": 216,
+      "text": "    else:"
+    },
+    {
+      "number": 217,
+      "text": "        report = {}"
+    },
+    {
+      "number": 218,
+      "text": "    sources = report.get(\"sources\", [])"
+    },
+    {
+      "number": 219,
+      "text": "    result = report.get(\"result\", {\"sections\": []})"
+    },
+    {
+      "number": 220,
+      "text": "    num_steps = len(steps)"
+    },
+    {
+      "number": 221,
+      "text": "    if not num_steps:"
+    },
+    {
+      "number": 222,
+      "text": "        try:"
+    },
+    {
+      "number": 223,
+      "text": "            num_steps = int(info.get(\"num_steps\") or 0)"
+    },
+    {
+      "number": 224,
+      "text": "        except (TypeError, ValueError):"
+    },
+    {
+      "number": 225,
+      "text": "            num_steps = 0"
+    },
+    {
+      "number": 226,
+      "text": "    return render_template("
+    },
+    {
+      "number": 227,
+      "text": "        \"task.html\","
+    },
+    {
+      "number": 228,
+      "text": "        info=info,"
+    },
+    {
+      "number": 229,
+      "text": "        final_response=final,"
+    },
+    {
+      "number": 230,
+      "text": "        sources=sources,"
+    },
+    {
+      "number": 231,
+      "text": "        result=result,"
+    },
+    {
+      "number": 232,
+      "text": "        updated=updated,"
+    },
+    {
+      "number": 233,
+      "text": "        num_steps=num_steps,"
+    },
+    {
+      "number": 234,
+      "text": "    )"
+    },
+    {
+      "number": 235,
+      "text": ""
+    },
+    {
+      "number": 236,
+      "text": ""
+    },
+    {
+      "number": 237,
+      "text": "@app.route(\"/task/<short_id>/screenshot/<path:filename>\")"
+    },
+    {
+      "number": 238,
+      "text": "def screenshot(short_id: str, filename: str):"
+    },
+    {
+      "number": 239,
+      "text": "    folder = (TASKS_DIR / short_id / \"screenshots\").resolve()"
+    },
+    {
+      "number": 240,
+      "text": "    target = (folder / filename).resolve()"
+    },
+    {
+      "number": 241,
+      "text": "    if not target.exists():"
+    },
+    {
+      "number": 242,
+      "text": "        abort(404)"
+    },
+    {
+      "number": 243,
+      "text": "    return send_from_directory(folder, filename)"
+    },
+    {
+      "number": 244,
+      "text": ""
+    },
+    {
+      "number": 245,
+      "text": ""
+    },
+    {
+      "number": 246,
+      "text": "def main():"
+    },
+    {
+      "number": 247,
+      "text": "    parser = argparse.ArgumentParser()"
+    },
+    {
+      "number": 248,
+      "text": "    parser.add_argument(\"--host\", default=\"0.0.0.0\")"
+    },
+    {
+      "number": 249,
+      "text": "    parser.add_argument(\"--port\", type=int, default=5005)"
+    },
+    {
+      "number": 250,
+      "text": "    parser.add_argument("
+    },
+    {
+      "number": 251,
+      "text": "        \"--tasks-dir\","
+    },
+    {
+      "number": 252,
+      "text": "        type=Path,"
+    },
+    {
+      "number": 253,
+      "text": "        default=None,"
+    },
+    {
+      "number": 254,
+      "text": "        help=\"Directory containing <short_id>/task.json and report.json folders.\","
+    },
+    {
+      "number": 255,
+      "text": "    )"
+    },
+    {
+      "number": 256,
+      "text": "    parser.add_argument(\"--debug\", action=\"store_true\")"
+    },
+    {
+      "number": 257,
+      "text": "    args = parser.parse_args()"
+    },
+    {
+      "number": 258,
+      "text": "    global TASKS_DIR"
+    },
+    {
+      "number": 259,
+      "text": "    TASKS_DIR = _resolve_tasks_dir(args.tasks_dir)"
+    },
+    {
+      "number": 260,
+      "text": "    app.run(host=args.host, port=args.port, debug=args.debug)"
+    },
+    {
+      "number": 261,
+      "text": ""
+    },
+    {
+      "number": 262,
+      "text": ""
+    },
+    {
+      "number": 263,
+      "text": "if __name__ == \"__main__\":"
+    },
+    {
+      "number": 264,
+      "text": "    main()"
+    }
+  ],
+  "error": null
+}

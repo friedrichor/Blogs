@@ -1,0 +1,2356 @@
+{
+  "id": "file-b5b69364e30b",
+  "path": "src/webwright/models/base.py",
+  "language": "python",
+  "lines": [
+    {
+      "number": 1,
+      "text": "from __future__ import annotations"
+    },
+    {
+      "number": 2,
+      "text": ""
+    },
+    {
+      "number": 3,
+      "text": "import asyncio"
+    },
+    {
+      "number": 4,
+      "text": "import base64"
+    },
+    {
+      "number": 5,
+      "text": "import json"
+    },
+    {
+      "number": 6,
+      "text": "import mimetypes"
+    },
+    {
+      "number": 7,
+      "text": "import os"
+    },
+    {
+      "number": 8,
+      "text": "import subprocess"
+    },
+    {
+      "number": 9,
+      "text": "from pathlib import Path"
+    },
+    {
+      "number": 10,
+      "text": "from typing import Annotated, Any"
+    },
+    {
+      "number": 11,
+      "text": ""
+    },
+    {
+      "number": 12,
+      "text": "import httpx"
+    },
+    {
+      "number": 13,
+      "text": "from jinja2 import StrictUndefined, Template"
+    },
+    {
+      "number": 14,
+      "text": "from pydantic import BaseModel as PydanticBaseModel, BeforeValidator, field_validator"
+    },
+    {
+      "number": 15,
+      "text": ""
+    },
+    {
+      "number": 16,
+      "text": "from webwright.exceptions import FormatError"
+    },
+    {
+      "number": 17,
+      "text": "from webwright.utils.logging import append_runtime_log"
+    },
+    {
+      "number": 18,
+      "text": "from webwright.utils.runtime import run_async"
+    },
+    {
+      "number": 19,
+      "text": ""
+    },
+    {
+      "number": 20,
+      "text": ""
+    },
+    {
+      "number": 21,
+      "text": "def _none_to_str(value: Any) -> str:"
+    },
+    {
+      "number": 22,
+      "text": "    return \"\" if value is None else str(value)"
+    },
+    {
+      "number": 23,
+      "text": ""
+    },
+    {
+      "number": 24,
+      "text": ""
+    },
+    {
+      "number": 25,
+      "text": "# String field that coerces None -> \"\" and any value -> str via pydantic."
+    },
+    {
+      "number": 26,
+      "text": "OptStr = Annotated[str, BeforeValidator(_none_to_str)]"
+    },
+    {
+      "number": 27,
+      "text": ""
+    },
+    {
+      "number": 28,
+      "text": "MAX_JSON_PARSE_RETRIES = 3"
+    },
+    {
+      "number": 29,
+      "text": "DEFAULT_OBSERVATION_TEMPLATE = \"\"\"Observation:"
+    },
+    {
+      "number": 30,
+      "text": "Status: {{ 'ok' if observation.success else 'error' }}"
+    },
+    {
+      "number": 31,
+      "text": "URL: {{ observation.url }}"
+    },
+    {
+      "number": 32,
+      "text": "Title: {{ observation.title }}"
+    },
+    {
+      "number": 33,
+      "text": "{% if observation.exception %}Exception:"
+    },
+    {
+      "number": 34,
+      "text": "{{ observation.exception }}"
+    },
+    {
+      "number": 35,
+      "text": "{% endif %}{% if observation.console_output %}Console output:"
+    },
+    {
+      "number": 36,
+      "text": "{{ observation.console_output }}"
+    },
+    {
+      "number": 37,
+      "text": "{% endif %}{% if observation.aria_snapshot %}ARIA snapshot:"
+    },
+    {
+      "number": 38,
+      "text": "{{ observation.aria_snapshot }}"
+    },
+    {
+      "number": 39,
+      "text": "{% endif %}{% if observation.screenshot_path %}Screenshot path: {{ observation.screenshot_path }}"
+    },
+    {
+      "number": 40,
+      "text": "{% endif %}\"\"\""
+    },
+    {
+      "number": 41,
+      "text": "DEFAULT_FORMAT_ERROR_TEMPLATE = \"\"\"Format error:"
+    },
+    {
+      "number": 42,
+      "text": ""
+    },
+    {
+      "number": 43,
+      "text": "{{ error }}"
+    },
+    {
+      "number": 44,
+      "text": ""
+    },
+    {
+      "number": 45,
+      "text": "Please respond with strict JSON using exactly these fields:"
+    },
+    {
+      "number": 46,
+      "text": "- thought: short reasoning about the next step"
+    },
+    {
+      "number": 47,
+      "text": "- bash_command: exactly one shell command for local-workspace tasks"
+    },
+    {
+      "number": 48,
+      "text": "- python_code: exactly one async Python browser step for local-browser tasks"
+    },
+    {
+      "number": 49,
+      "text": "- done: boolean indicating whether the task is complete"
+    },
+    {
+      "number": 50,
+      "text": "- final_response: final natural-language answer when done, otherwise empty"
+    },
+    {
+      "number": 51,
+      "text": "\"\"\""
+    },
+    {
+      "number": 52,
+      "text": ""
+    },
+    {
+      "number": 53,
+      "text": "ACTION_FIELDS = {\"bash_command\", \"python_code\"}"
+    },
+    {
+      "number": 54,
+      "text": ""
+    },
+    {
+      "number": 55,
+      "text": ""
+    },
+    {
+      "number": 56,
+      "text": "def _is_rate_limit_error(exc: BaseException | None) -> bool:"
+    },
+    {
+      "number": 57,
+      "text": "    current: BaseException | None = exc"
+    },
+    {
+      "number": 58,
+      "text": "    while current is not None:"
+    },
+    {
+      "number": 59,
+      "text": "        status_code = getattr(current, \"status_code\", None)"
+    },
+    {
+      "number": 60,
+      "text": "        if status_code == 429:"
+    },
+    {
+      "number": 61,
+      "text": "            return True"
+    },
+    {
+      "number": 62,
+      "text": "        response = getattr(current, \"response\", None)"
+    },
+    {
+      "number": 63,
+      "text": "        if getattr(response, \"status_code\", None) == 429:"
+    },
+    {
+      "number": 64,
+      "text": "            return True"
+    },
+    {
+      "number": 65,
+      "text": "        text = str(current).lower()"
+    },
+    {
+      "number": 66,
+      "text": "        if \"rate limit\" in text or \"ratelimit\" in text or \"too many requests\" in text:"
+    },
+    {
+      "number": 67,
+      "text": "            return True"
+    },
+    {
+      "number": 68,
+      "text": "        current = current.__cause__ if isinstance(current.__cause__, BaseException) else None"
+    },
+    {
+      "number": 69,
+      "text": "    return False"
+    },
+    {
+      "number": 70,
+      "text": ""
+    },
+    {
+      "number": 71,
+      "text": ""
+    },
+    {
+      "number": 72,
+      "text": "def _is_transient_http_error(exc: BaseException | None) -> bool:"
+    },
+    {
+      "number": 73,
+      "text": "    \"\"\"True for retryable transient HTTP failures (timeouts, 5xx, conn resets, ...)."
+    },
+    {
+      "number": 74,
+      "text": ""
+    },
+    {
+      "number": 75,
+      "text": "    Applies to any HTTP backend, not just gateway/proxy setups."
+    },
+    {
+      "number": 76,
+      "text": "    \"\"\""
+    },
+    {
+      "number": 77,
+      "text": "    current: BaseException | None = exc"
+    },
+    {
+      "number": 78,
+      "text": "    while current is not None:"
+    },
+    {
+      "number": 79,
+      "text": "        if isinstance(current, (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError)):"
+    },
+    {
+      "number": 80,
+      "text": "            return True"
+    },
+    {
+      "number": 81,
+      "text": "        status_code = getattr(current, \"status_code\", None)"
+    },
+    {
+      "number": 82,
+      "text": "        if isinstance(status_code, int) and status_code in {408, 409, 425, 500, 502, 503, 504}:"
+    },
+    {
+      "number": 83,
+      "text": "            return True"
+    },
+    {
+      "number": 84,
+      "text": "        response = getattr(current, \"response\", None)"
+    },
+    {
+      "number": 85,
+      "text": "        response_status = getattr(response, \"status_code\", None)"
+    },
+    {
+      "number": 86,
+      "text": "        if isinstance(response_status, int) and response_status in {408, 409, 425, 500, 502, 503, 504}:"
+    },
+    {
+      "number": 87,
+      "text": "            return True"
+    },
+    {
+      "number": 88,
+      "text": "        text = str(current).lower()"
+    },
+    {
+      "number": 89,
+      "text": "        if any("
+    },
+    {
+      "number": 90,
+      "text": "            needle in text"
+    },
+    {
+      "number": 91,
+      "text": "            for needle in ("
+    },
+    {
+      "number": 92,
+      "text": "                \"bad gateway\","
+    },
+    {
+      "number": 93,
+      "text": "                \"gateway timeout\","
+    },
+    {
+      "number": 94,
+      "text": "                \"server disconnected\","
+    },
+    {
+      "number": 95,
+      "text": "                \"temporary failure\","
+    },
+    {
+      "number": 96,
+      "text": "                \"temporarily unavailable\","
+    },
+    {
+      "number": 97,
+      "text": "                \"connection reset\","
+    },
+    {
+      "number": 98,
+      "text": "                \"connection aborted\","
+    },
+    {
+      "number": 99,
+      "text": "                \"timed out\","
+    },
+    {
+      "number": 100,
+      "text": "            )"
+    },
+    {
+      "number": 101,
+      "text": "        ):"
+    },
+    {
+      "number": 102,
+      "text": "            return True"
+    },
+    {
+      "number": 103,
+      "text": "        current = current.__cause__ if isinstance(current.__cause__, BaseException) else None"
+    },
+    {
+      "number": 104,
+      "text": "    return False"
+    },
+    {
+      "number": 105,
+      "text": ""
+    },
+    {
+      "number": 106,
+      "text": ""
+    },
+    {
+      "number": 107,
+      "text": "def parse_json_output(raw: str, *, action_field: str = \"bash_command\") -> dict[str, Any]:"
+    },
+    {
+      "number": 108,
+      "text": "    try:"
+    },
+    {
+      "number": 109,
+      "text": "        parsed = json.loads(raw)"
+    },
+    {
+      "number": 110,
+      "text": "    except json.JSONDecodeError as exc:"
+    },
+    {
+      "number": 111,
+      "text": "        raise ValueError(f\"Unable to parse JSON output: {exc}\") from exc"
+    },
+    {
+      "number": 112,
+      "text": "    if not isinstance(parsed, dict):"
+    },
+    {
+      "number": 113,
+      "text": "        raise ValueError(\"Model output was JSON but not a JSON object.\")"
+    },
+    {
+      "number": 114,
+      "text": "    # Strict-schema responses cannot have done=true with a non-empty action;"
+    },
+    {
+      "number": 115,
+      "text": "    # tolerate it from non-strict callers by demoting `done`."
+    },
+    {
+      "number": 116,
+      "text": "    action_text = str(parsed.get(action_field, \"\") or \"\").strip()"
+    },
+    {
+      "number": 117,
+      "text": "    if action_text and bool(parsed.get(\"done\", False)):"
+    },
+    {
+      "number": 118,
+      "text": "        parsed = dict(parsed)"
+    },
+    {
+      "number": 119,
+      "text": "        parsed[\"done\"] = False"
+    },
+    {
+      "number": 120,
+      "text": "    return parsed"
+    },
+    {
+      "number": 121,
+      "text": ""
+    },
+    {
+      "number": 122,
+      "text": ""
+    },
+    {
+      "number": 123,
+      "text": "def _validate_bash_command(command: str) -> None:"
+    },
+    {
+      "number": 124,
+      "text": "    result = subprocess.run("
+    },
+    {
+      "number": 125,
+      "text": "        [\"/bin/bash\", \"-n\"],"
+    },
+    {
+      "number": 126,
+      "text": "        input=command,"
+    },
+    {
+      "number": 127,
+      "text": "        text=True,"
+    },
+    {
+      "number": 128,
+      "text": "        capture_output=True,"
+    },
+    {
+      "number": 129,
+      "text": "        encoding=\"utf-8\","
+    },
+    {
+      "number": 130,
+      "text": "        errors=\"replace\","
+    },
+    {
+      "number": 131,
+      "text": "        check=False,"
+    },
+    {
+      "number": 132,
+      "text": "    )"
+    },
+    {
+      "number": 133,
+      "text": "    if result.returncode == 0:"
+    },
+    {
+      "number": 134,
+      "text": "        return"
+    },
+    {
+      "number": 135,
+      "text": "    error = (result.stderr or result.stdout or \"bash syntax check failed\").strip()"
+    },
+    {
+      "number": 136,
+      "text": "    raise ValueError(f\"Invalid bash_command syntax: {error}\")"
+    },
+    {
+      "number": 137,
+      "text": ""
+    },
+    {
+      "number": 138,
+      "text": ""
+    },
+    {
+      "number": 139,
+      "text": "def text_part(text: str) -> dict[str, Any]:"
+    },
+    {
+      "number": 140,
+      "text": "    return {\"type\": \"input_text\", \"text\": text}"
+    },
+    {
+      "number": 141,
+      "text": ""
+    },
+    {
+      "number": 142,
+      "text": ""
+    },
+    {
+      "number": 143,
+      "text": "def image_part_from_path(path: Path) -> dict[str, Any]:"
+    },
+    {
+      "number": 144,
+      "text": "    mime_type, _ = mimetypes.guess_type(str(path))"
+    },
+    {
+      "number": 145,
+      "text": "    encoded = base64.b64encode(path.read_bytes()).decode(\"ascii\")"
+    },
+    {
+      "number": 146,
+      "text": "    return {"
+    },
+    {
+      "number": 147,
+      "text": "        \"type\": \"input_image\","
+    },
+    {
+      "number": 148,
+      "text": "        \"image_url\": f\"data:{mime_type or 'image/png'};base64,{encoded}\","
+    },
+    {
+      "number": 149,
+      "text": "        \"detail\": \"high\","
+    },
+    {
+      "number": 150,
+      "text": "    }"
+    },
+    {
+      "number": 151,
+      "text": ""
+    },
+    {
+      "number": 152,
+      "text": ""
+    },
+    {
+      "number": 153,
+      "text": "def _safe_int(value: Any) -> int:"
+    },
+    {
+      "number": 154,
+      "text": "    try:"
+    },
+    {
+      "number": 155,
+      "text": "        return int(value)"
+    },
+    {
+      "number": 156,
+      "text": "    except (TypeError, ValueError):"
+    },
+    {
+      "number": 157,
+      "text": "        return 0"
+    },
+    {
+      "number": 158,
+      "text": ""
+    },
+    {
+      "number": 159,
+      "text": ""
+    },
+    {
+      "number": 160,
+      "text": "def _request_metrics_from_serialized_input(serialized_input: list[dict[str, Any]]) -> dict[str, int]:"
+    },
+    {
+      "number": 161,
+      "text": "    message_count = len(serialized_input)"
+    },
+    {
+      "number": 162,
+      "text": "    text_part_count = 0"
+    },
+    {
+      "number": 163,
+      "text": "    image_part_count = 0"
+    },
+    {
+      "number": 164,
+      "text": "    text_chars = 0"
+    },
+    {
+      "number": 165,
+      "text": ""
+    },
+    {
+      "number": 166,
+      "text": "    for item in serialized_input:"
+    },
+    {
+      "number": 167,
+      "text": "        for content in item.get(\"content\") or []:"
+    },
+    {
+      "number": 168,
+      "text": "            if not isinstance(content, dict):"
+    },
+    {
+      "number": 169,
+      "text": "                continue"
+    },
+    {
+      "number": 170,
+      "text": "            part_type = content.get(\"type\")"
+    },
+    {
+      "number": 171,
+      "text": "            if part_type in {\"input_text\", \"output_text\"}:"
+    },
+    {
+      "number": 172,
+      "text": "                text_part_count += 1"
+    },
+    {
+      "number": 173,
+      "text": "                text_chars += len(str(content.get(\"text\", \"\") or \"\"))"
+    },
+    {
+      "number": 174,
+      "text": "            elif part_type == \"input_image\":"
+    },
+    {
+      "number": 175,
+      "text": "                image_part_count += 1"
+    },
+    {
+      "number": 176,
+      "text": ""
+    },
+    {
+      "number": 177,
+      "text": "    serialized_chars = len(json.dumps(serialized_input, ensure_ascii=False))"
+    },
+    {
+      "number": 178,
+      "text": ""
+    },
+    {
+      "number": 179,
+      "text": "    return {"
+    },
+    {
+      "number": 180,
+      "text": "        \"message_count\": message_count,"
+    },
+    {
+      "number": 181,
+      "text": "        \"text_part_count\": text_part_count,"
+    },
+    {
+      "number": 182,
+      "text": "        \"image_part_count\": image_part_count,"
+    },
+    {
+      "number": 183,
+      "text": "        \"text_chars\": text_chars,"
+    },
+    {
+      "number": 184,
+      "text": "        \"serialized_chars\": serialized_chars,"
+    },
+    {
+      "number": 185,
+      "text": "    }"
+    },
+    {
+      "number": 186,
+      "text": ""
+    },
+    {
+      "number": 187,
+      "text": ""
+    },
+    {
+      "number": 188,
+      "text": "_REQUEST_METRIC_KEYS = ("
+    },
+    {
+      "number": 189,
+      "text": "    \"message_count\","
+    },
+    {
+      "number": 190,
+      "text": "    \"text_part_count\","
+    },
+    {
+      "number": 191,
+      "text": "    \"image_part_count\","
+    },
+    {
+      "number": 192,
+      "text": "    \"text_chars\","
+    },
+    {
+      "number": 193,
+      "text": "    \"serialized_chars\","
+    },
+    {
+      "number": 194,
+      "text": ")"
+    },
+    {
+      "number": 195,
+      "text": "_USAGE_METRIC_KEYS = ("
+    },
+    {
+      "number": 196,
+      "text": "    \"input_tokens\","
+    },
+    {
+      "number": 197,
+      "text": "    \"output_tokens\","
+    },
+    {
+      "number": 198,
+      "text": "    \"total_tokens\","
+    },
+    {
+      "number": 199,
+      "text": "    \"cached_input_tokens\","
+    },
+    {
+      "number": 200,
+      "text": "    \"reasoning_output_tokens\","
+    },
+    {
+      "number": 201,
+      "text": ")"
+    },
+    {
+      "number": 202,
+      "text": ""
+    },
+    {
+      "number": 203,
+      "text": ""
+    },
+    {
+      "number": 204,
+      "text": "class BaseModelConfig(PydanticBaseModel):"
+    },
+    {
+      "number": 205,
+      "text": "    \"\"\"Fields common to every model backend (OpenAI, Anthropic, ...).\"\"\""
+    },
+    {
+      "number": 206,
+      "text": ""
+    },
+    {
+      "number": 207,
+      "text": "    model_name: OptStr = \"\""
+    },
+    {
+      "number": 208,
+      "text": "    max_output_tokens: int = 4000"
+    },
+    {
+      "number": 209,
+      "text": "    request_timeout_seconds: int = 120"
+    },
+    {
+      "number": 210,
+      "text": "    error_log_path: Path | None = None"
+    },
+    {
+      "number": 211,
+      "text": "    observation_template: OptStr = DEFAULT_OBSERVATION_TEMPLATE"
+    },
+    {
+      "number": 212,
+      "text": "    format_error_template: OptStr = DEFAULT_FORMAT_ERROR_TEMPLATE"
+    },
+    {
+      "number": 213,
+      "text": "    attach_observation_screenshot: bool = True"
+    },
+    {
+      "number": 214,
+      "text": "    action_field: str = \"bash_command\""
+    },
+    {
+      "number": 215,
+      "text": ""
+    },
+    {
+      "number": 216,
+      "text": "    @field_validator(\"action_field\")"
+    },
+    {
+      "number": 217,
+      "text": "    @classmethod"
+    },
+    {
+      "number": 218,
+      "text": "    def validate_action_field(cls, value: str) -> str:"
+    },
+    {
+      "number": 219,
+      "text": "        normalized = value.strip()"
+    },
+    {
+      "number": 220,
+      "text": "        if normalized not in ACTION_FIELDS:"
+    },
+    {
+      "number": 221,
+      "text": "            raise ValueError(f\"action_field must be one of: {', '.join(sorted(ACTION_FIELDS))}\")"
+    },
+    {
+      "number": 222,
+      "text": "        return normalized"
+    },
+    {
+      "number": 223,
+      "text": ""
+    },
+    {
+      "number": 224,
+      "text": ""
+    },
+    {
+      "number": 225,
+      "text": "class BaseModel:"
+    },
+    {
+      "number": 226,
+      "text": "    \"\"\"Provider-agnostic model backend."
+    },
+    {
+      "number": 227,
+      "text": ""
+    },
+    {
+      "number": 228,
+      "text": "    Subclasses must override:"
+    },
+    {
+      "number": 229,
+      "text": "      - class constants ``_API_KEY_FIELD``, ``_ENV_VAR``, ``_LOG_SOURCE``,"
+    },
+    {
+      "number": 230,
+      "text": "        ``_DEFAULT_CONFIG_CLASS`` (and optionally ``_MAX_RATE_LIMIT_RETRIES``,"
+    },
+    {
+      "number": 231,
+      "text": "        ``_MAX_TRANSIENT_RETRIES``)"
+    },
+    {
+      "number": 232,
+      "text": "      - ``_request_headers``, ``_post_url``"
+    },
+    {
+      "number": 233,
+      "text": "      - ``_build_payload``, ``_request_metrics_input``"
+    },
+    {
+      "number": 234,
+      "text": "      - ``_extract_text``, ``_usage_metrics_from_payload``"
+    },
+    {
+      "number": 235,
+      "text": ""
+    },
+    {
+      "number": 236,
+      "text": "    Optionally override ``_rate_limit_backoff`` / ``_transient_backoff`` for"
+    },
+    {
+      "number": 237,
+      "text": "    custom retry timing."
+    },
+    {
+      "number": 238,
+      "text": "    \"\"\""
+    },
+    {
+      "number": 239,
+      "text": ""
+    },
+    {
+      "number": 240,
+      "text": "    _API_KEY_FIELD: str = \"\""
+    },
+    {
+      "number": 241,
+      "text": "    _ENV_VAR: str = \"\""
+    },
+    {
+      "number": 242,
+      "text": "    _LOG_SOURCE: str = \"\""
+    },
+    {
+      "number": 243,
+      "text": "    _MAX_RATE_LIMIT_RETRIES: int = 5"
+    },
+    {
+      "number": 244,
+      "text": "    _MAX_TRANSIENT_RETRIES: int = 5"
+    },
+    {
+      "number": 245,
+      "text": "    _DEFAULT_CONFIG_CLASS: type = BaseModelConfig"
+    },
+    {
+      "number": 246,
+      "text": ""
+    },
+    {
+      "number": 247,
+      "text": "    def __init__(self, *, config_class: type | None = None, **kwargs):"
+    },
+    {
+      "number": 248,
+      "text": "        self.config = (config_class or self._DEFAULT_CONFIG_CLASS)(**kwargs)"
+    },
+    {
+      "number": 249,
+      "text": "        self._last_request_metrics: dict[str, int] = {k: 0 for k in _REQUEST_METRIC_KEYS}"
+    },
+    {
+      "number": 250,
+      "text": "        self._last_usage_metrics: dict[str, int] = {k: 0 for k in _USAGE_METRIC_KEYS}"
+    },
+    {
+      "number": 251,
+      "text": "        self._cumulative_request_metrics: dict[str, int] = dict(self._last_request_metrics)"
+    },
+    {
+      "number": 252,
+      "text": "        self._cumulative_usage_metrics: dict[str, int] = dict(self._last_usage_metrics)"
+    },
+    {
+      "number": 253,
+      "text": ""
+    },
+    {
+      "number": 254,
+      "text": "        if self._API_KEY_FIELD:"
+    },
+    {
+      "number": 255,
+      "text": "            if not getattr(self.config, self._API_KEY_FIELD, \"\"):"
+    },
+    {
+      "number": 256,
+      "text": "                setattr(self.config, self._API_KEY_FIELD, os.environ.get(self._ENV_VAR, \"\"))"
+    },
+    {
+      "number": 257,
+      "text": "            if not getattr(self.config, self._API_KEY_FIELD, \"\"):"
+    },
+    {
+      "number": 258,
+      "text": "                raise RuntimeError(f\"Missing {self._ENV_VAR}.\")"
+    },
+    {
+      "number": 259,
+      "text": ""
+    },
+    {
+      "number": 260,
+      "text": "    # ---- subclass extension points ------------------------------------------------"
+    },
+    {
+      "number": 261,
+      "text": ""
+    },
+    {
+      "number": 262,
+      "text": "    def _request_headers(self) -> dict[str, str]:"
+    },
+    {
+      "number": 263,
+      "text": "        raise NotImplementedError"
+    },
+    {
+      "number": 264,
+      "text": ""
+    },
+    {
+      "number": 265,
+      "text": "    def _post_url(self) -> str:"
+    },
+    {
+      "number": 266,
+      "text": "        raise NotImplementedError"
+    },
+    {
+      "number": 267,
+      "text": ""
+    },
+    {
+      "number": 268,
+      "text": "    def _build_payload(self, messages: list[dict[str, Any]]) -> dict[str, Any]:"
+    },
+    {
+      "number": 269,
+      "text": "        raise NotImplementedError"
+    },
+    {
+      "number": 270,
+      "text": ""
+    },
+    {
+      "number": 271,
+      "text": "    def _build_text_payload(self, messages: list[dict[str, Any]]) -> dict[str, Any]:"
+    },
+    {
+      "number": 272,
+      "text": "        return self._build_payload(messages)"
+    },
+    {
+      "number": 273,
+      "text": ""
+    },
+    {
+      "number": 274,
+      "text": "    def _request_metrics_input(self, payload: dict[str, Any]) -> list[dict[str, Any]]:"
+    },
+    {
+      "number": 275,
+      "text": "        raise NotImplementedError"
+    },
+    {
+      "number": 276,
+      "text": ""
+    },
+    {
+      "number": 277,
+      "text": "    def _extract_text(self, payload: dict[str, Any]) -> str:"
+    },
+    {
+      "number": 278,
+      "text": "        raise NotImplementedError"
+    },
+    {
+      "number": 279,
+      "text": ""
+    },
+    {
+      "number": 280,
+      "text": "    def _usage_metrics_from_payload(self, payload: dict[str, Any]) -> dict[str, int]:"
+    },
+    {
+      "number": 281,
+      "text": "        raise NotImplementedError"
+    },
+    {
+      "number": 282,
+      "text": ""
+    },
+    {
+      "number": 283,
+      "text": "    async def _rate_limit_backoff(self, attempt: int, exc: BaseException) -> None:"
+    },
+    {
+      "number": 284,
+      "text": "        await asyncio.sleep(min(5 * (attempt + 1), 30))"
+    },
+    {
+      "number": 285,
+      "text": ""
+    },
+    {
+      "number": 286,
+      "text": "    async def _transient_backoff(self, attempt: int, exc: BaseException) -> None:"
+    },
+    {
+      "number": 287,
+      "text": "        await asyncio.sleep(min(2 * (attempt + 1), 10))"
+    },
+    {
+      "number": 288,
+      "text": ""
+    },
+    {
+      "number": 289,
+      "text": "    # ---- shared infrastructure ----------------------------------------------------"
+    },
+    {
+      "number": 290,
+      "text": ""
+    },
+    {
+      "number": 291,
+      "text": "    def get_template_vars(self, **kwargs) -> dict[str, Any]:"
+    },
+    {
+      "number": 292,
+      "text": "        vars: dict[str, Any] = {"
+    },
+    {
+      "number": 293,
+      "text": "            \"action_field\": self.config.action_field,"
+    },
+    {
+      "number": 294,
+      "text": "            \"model_name\": self.config.model_name,"
+    },
+    {
+      "number": 295,
+      "text": "        }"
+    },
+    {
+      "number": 296,
+      "text": "        for k, v in self._last_request_metrics.items():"
+    },
+    {
+      "number": 297,
+      "text": "            vars[f\"last_request_{k}\"] = v"
+    },
+    {
+      "number": 298,
+      "text": "        for k, v in self._last_usage_metrics.items():"
+    },
+    {
+      "number": 299,
+      "text": "            vars[f\"last_request_{k}\"] = v"
+    },
+    {
+      "number": 300,
+      "text": "        for k, v in self._cumulative_request_metrics.items():"
+    },
+    {
+      "number": 301,
+      "text": "            vars[f\"cumulative_request_{k}\"] = v"
+    },
+    {
+      "number": 302,
+      "text": "        for k, v in self._cumulative_usage_metrics.items():"
+    },
+    {
+      "number": 303,
+      "text": "            vars[f\"cumulative_{k}\"] = v"
+    },
+    {
+      "number": 304,
+      "text": "        vars.update(kwargs)"
+    },
+    {
+      "number": 305,
+      "text": "        return vars"
+    },
+    {
+      "number": 306,
+      "text": ""
+    },
+    {
+      "number": 307,
+      "text": "    def _response_schema(self) -> dict[str, Any]:"
+    },
+    {
+      "number": 308,
+      "text": "        action_field = self.config.action_field"
+    },
+    {
+      "number": 309,
+      "text": "        return {"
+    },
+    {
+      "number": 310,
+      "text": "            \"type\": \"object\","
+    },
+    {
+      "number": 311,
+      "text": "            \"additionalProperties\": False,"
+    },
+    {
+      "number": 312,
+      "text": "            \"properties\": {"
+    },
+    {
+      "number": 313,
+      "text": "                \"thought\": {\"type\": \"string\"},"
+    },
+    {
+      "number": 314,
+      "text": "                action_field: {\"type\": \"string\"},"
+    },
+    {
+      "number": 315,
+      "text": "                \"done\": {\"type\": \"boolean\"},"
+    },
+    {
+      "number": 316,
+      "text": "                \"final_response\": {\"type\": \"string\"},"
+    },
+    {
+      "number": 317,
+      "text": "            },"
+    },
+    {
+      "number": 318,
+      "text": "            \"required\": [\"thought\", action_field, \"done\", \"final_response\"],"
+    },
+    {
+      "number": 319,
+      "text": "        }"
+    },
+    {
+      "number": 320,
+      "text": ""
+    },
+    {
+      "number": 321,
+      "text": "    def _usage_snapshot(self) -> dict[str, dict[str, int]]:"
+    },
+    {
+      "number": 322,
+      "text": "        return {"
+    },
+    {
+      "number": 323,
+      "text": "            \"last_request\": {"
+    },
+    {
+      "number": 324,
+      "text": "                \"message_count\": self._last_request_metrics[\"message_count\"],"
+    },
+    {
+      "number": 325,
+      "text": "                \"text_part_count\": self._last_request_metrics[\"text_part_count\"],"
+    },
+    {
+      "number": 326,
+      "text": "                \"image_part_count\": self._last_request_metrics[\"image_part_count\"],"
+    },
+    {
+      "number": 327,
+      "text": "                \"input_tokens\": self._last_usage_metrics[\"input_tokens\"],"
+    },
+    {
+      "number": 328,
+      "text": "                \"cached_input_tokens\": self._last_usage_metrics[\"cached_input_tokens\"],"
+    },
+    {
+      "number": 329,
+      "text": "            },"
+    },
+    {
+      "number": 330,
+      "text": "            \"last_response\": dict(self._last_usage_metrics),"
+    },
+    {
+      "number": 331,
+      "text": "            \"cumulative_request\": {"
+    },
+    {
+      "number": 332,
+      "text": "                \"message_count\": self._cumulative_request_metrics[\"message_count\"],"
+    },
+    {
+      "number": 333,
+      "text": "                \"text_part_count\": self._cumulative_request_metrics[\"text_part_count\"],"
+    },
+    {
+      "number": 334,
+      "text": "                \"image_part_count\": self._cumulative_request_metrics[\"image_part_count\"],"
+    },
+    {
+      "number": 335,
+      "text": "                \"input_tokens\": self._cumulative_usage_metrics[\"input_tokens\"],"
+    },
+    {
+      "number": 336,
+      "text": "                \"cached_input_tokens\": self._cumulative_usage_metrics[\"cached_input_tokens\"],"
+    },
+    {
+      "number": 337,
+      "text": "            },"
+    },
+    {
+      "number": 338,
+      "text": "            \"cumulative_response\": dict(self._cumulative_usage_metrics),"
+    },
+    {
+      "number": 339,
+      "text": "        }"
+    },
+    {
+      "number": 340,
+      "text": ""
+    },
+    {
+      "number": 341,
+      "text": "    def _log_gateway_error(self, *, event: str, attempt: int, error: BaseException) -> None:"
+    },
+    {
+      "number": 342,
+      "text": "        response = getattr(error, \"response\", None)"
+    },
+    {
+      "number": 343,
+      "text": "        response_text = \"\""
+    },
+    {
+      "number": 344,
+      "text": "        if response is not None:"
+    },
+    {
+      "number": 345,
+      "text": "            try:"
+    },
+    {
+      "number": 346,
+      "text": "                response_text = str(getattr(response, \"text\", \"\") or \"\")"
+    },
+    {
+      "number": 347,
+      "text": "            except Exception:"
+    },
+    {
+      "number": 348,
+      "text": "                response_text = \"\""
+    },
+    {
+      "number": 349,
+      "text": "        if len(response_text) > 4000:"
+    },
+    {
+      "number": 350,
+      "text": "            response_text = response_text[:4000]"
+    },
+    {
+      "number": 351,
+      "text": ""
+    },
+    {
+      "number": 352,
+      "text": "        append_runtime_log("
+    },
+    {
+      "number": 353,
+      "text": "            self.config.error_log_path,"
+    },
+    {
+      "number": 354,
+      "text": "            source=self._LOG_SOURCE,"
+    },
+    {
+      "number": 355,
+      "text": "            event=event,"
+    },
+    {
+      "number": 356,
+      "text": "            model_name=self.config.model_name,"
+    },
+    {
+      "number": 357,
+      "text": "            endpoint=self._post_url(),"
+    },
+    {
+      "number": 358,
+      "text": "            attempt=attempt,"
+    },
+    {
+      "number": 359,
+      "text": "            error_type=type(error).__name__,"
+    },
+    {
+      "number": 360,
+      "text": "            error=str(error),"
+    },
+    {
+      "number": 361,
+      "text": "            status_code=getattr(response, \"status_code\", None),"
+    },
+    {
+      "number": 362,
+      "text": "            response_text=response_text,"
+    },
+    {
+      "number": 363,
+      "text": "        )"
+    },
+    {
+      "number": 364,
+      "text": ""
+    },
+    {
+      "number": 365,
+      "text": "    def _raw_response_log_path(self) -> Path | None:"
+    },
+    {
+      "number": 366,
+      "text": "        if self.config.error_log_path is None:"
+    },
+    {
+      "number": 367,
+      "text": "            return None"
+    },
+    {
+      "number": 368,
+      "text": "        return self.config.error_log_path.parent / \"raw_responses.jsonl\""
+    },
+    {
+      "number": 369,
+      "text": ""
+    },
+    {
+      "number": 370,
+      "text": "    def format_message(self, **kwargs) -> dict[str, Any]:"
+    },
+    {
+      "number": 371,
+      "text": "        role = kwargs[\"role\"]"
+    },
+    {
+      "number": 372,
+      "text": "        content = kwargs.get(\"content\", \"\")"
+    },
+    {
+      "number": 373,
+      "text": "        extra = kwargs.get(\"extra\", {})"
+    },
+    {
+      "number": 374,
+      "text": "        return {\"role\": role, \"content\": content, \"extra\": extra}"
+    },
+    {
+      "number": 375,
+      "text": ""
+    },
+    {
+      "number": 376,
+      "text": "    def format_observation_messages("
+    },
+    {
+      "number": 377,
+      "text": "        self,"
+    },
+    {
+      "number": 378,
+      "text": "        message: dict[str, Any],"
+    },
+    {
+      "number": 379,
+      "text": "        outputs: list[dict[str, Any]],"
+    },
+    {
+      "number": 380,
+      "text": "        template_vars: dict[str, Any] | None = None,"
+    },
+    {
+      "number": 381,
+      "text": "    ) -> list[dict[str, Any]]:"
+    },
+    {
+      "number": 382,
+      "text": "        observation_messages: list[dict[str, Any]] = []"
+    },
+    {
+      "number": 383,
+      "text": "        for output in outputs:"
+    },
+    {
+      "number": 384,
+      "text": "            observation = output.get(\"observation\", {})"
+    },
+    {
+      "number": 385,
+      "text": "            content = Template(self.config.observation_template, undefined=StrictUndefined).render("
+    },
+    {
+      "number": 386,
+      "text": "                output=output,"
+    },
+    {
+      "number": 387,
+      "text": "                observation=observation,"
+    },
+    {
+      "number": 388,
+      "text": "                **(template_vars or {}),"
+    },
+    {
+      "number": 389,
+      "text": "            )"
+    },
+    {
+      "number": 390,
+      "text": ""
+    },
+    {
+      "number": 391,
+      "text": "            parts: list[dict[str, Any]] = [text_part(content)]"
+    },
+    {
+      "number": 392,
+      "text": "            screenshot_path = observation.get(\"screenshot_path\")"
+    },
+    {
+      "number": 393,
+      "text": "            if self.config.attach_observation_screenshot and screenshot_path:"
+    },
+    {
+      "number": 394,
+      "text": "                parts.append(image_part_from_path(Path(screenshot_path)))"
+    },
+    {
+      "number": 395,
+      "text": ""
+    },
+    {
+      "number": 396,
+      "text": "            observation_messages.append("
+    },
+    {
+      "number": 397,
+      "text": "                self.format_message(role=\"user\", content=parts, extra={\"observation\": observation})"
+    },
+    {
+      "number": 398,
+      "text": "            )"
+    },
+    {
+      "number": 399,
+      "text": "        return observation_messages"
+    },
+    {
+      "number": 400,
+      "text": ""
+    },
+    {
+      "number": 401,
+      "text": "    def _format_error(self, *, raw_text: str, error: str) -> FormatError:"
+    },
+    {
+      "number": 402,
+      "text": "        return FormatError("
+    },
+    {
+      "number": 403,
+      "text": "            self.format_message("
+    },
+    {
+      "number": 404,
+      "text": "                role=\"user\","
+    },
+    {
+      "number": 405,
+      "text": "                content=Template(self.config.format_error_template, undefined=StrictUndefined).render("
+    },
+    {
+      "number": 406,
+      "text": "                    error=error,"
+    },
+    {
+      "number": 407,
+      "text": "                    model_response=raw_text,"
+    },
+    {
+      "number": 408,
+      "text": "                    **self.get_template_vars(),"
+    },
+    {
+      "number": 409,
+      "text": "                ),"
+    },
+    {
+      "number": 410,
+      "text": "                extra={"
+    },
+    {
+      "number": 411,
+      "text": "                    \"interrupt_type\": \"FormatError\","
+    },
+    {
+      "number": 412,
+      "text": "                    \"model_response\": raw_text,"
+    },
+    {
+      "number": 413,
+      "text": "                },"
+    },
+    {
+      "number": 414,
+      "text": "            )"
+    },
+    {
+      "number": 415,
+      "text": "        )"
+    },
+    {
+      "number": 416,
+      "text": ""
+    },
+    {
+      "number": 417,
+      "text": "    def _format_repair_message(self, *, raw_text: str, error: str) -> dict[str, Any]:"
+    },
+    {
+      "number": 418,
+      "text": "        return self.format_message("
+    },
+    {
+      "number": 419,
+      "text": "            role=\"user\","
+    },
+    {
+      "number": 420,
+      "text": "            content=Template(self.config.format_error_template, undefined=StrictUndefined).render("
+    },
+    {
+      "number": 421,
+      "text": "                error=error,"
+    },
+    {
+      "number": 422,
+      "text": "                model_response=raw_text,"
+    },
+    {
+      "number": 423,
+      "text": "                **self.get_template_vars(),"
+    },
+    {
+      "number": 424,
+      "text": "            ),"
+    },
+    {
+      "number": 425,
+      "text": "            extra={"
+    },
+    {
+      "number": 426,
+      "text": "                \"interrupt_type\": \"FormatErrorRetry\","
+    },
+    {
+      "number": 427,
+      "text": "                \"model_response\": raw_text,"
+    },
+    {
+      "number": 428,
+      "text": "            },"
+    },
+    {
+      "number": 429,
+      "text": "        )"
+    },
+    {
+      "number": 430,
+      "text": ""
+    },
+    {
+      "number": 431,
+      "text": "    async def _post_with_retries(self, payload: dict[str, Any]) -> dict[str, Any]:"
+    },
+    {
+      "number": 432,
+      "text": "        headers = self._request_headers()"
+    },
+    {
+      "number": 433,
+      "text": "        url = self._post_url()"
+    },
+    {
+      "number": 434,
+      "text": "        for attempt in range(max(self._MAX_RATE_LIMIT_RETRIES, self._MAX_TRANSIENT_RETRIES) + 1):"
+    },
+    {
+      "number": 435,
+      "text": "            try:"
+    },
+    {
+      "number": 436,
+      "text": "                async with httpx.AsyncClient(timeout=self.config.request_timeout_seconds) as client:"
+    },
+    {
+      "number": 437,
+      "text": "                    response = await client.post(url, headers=headers, json=payload)"
+    },
+    {
+      "number": 438,
+      "text": "                    response.raise_for_status()"
+    },
+    {
+      "number": 439,
+      "text": "                    return response.json()"
+    },
+    {
+      "number": 440,
+      "text": "            except Exception as exc:"
+    },
+    {
+      "number": 441,
+      "text": "                if _is_rate_limit_error(exc):"
+    },
+    {
+      "number": 442,
+      "text": "                    self._log_gateway_error("
+    },
+    {
+      "number": 443,
+      "text": "                        event=\"rate_limit_error\", attempt=attempt + 1, error=exc"
+    },
+    {
+      "number": 444,
+      "text": "                    )"
+    },
+    {
+      "number": 445,
+      "text": "                    if attempt >= self._MAX_RATE_LIMIT_RETRIES:"
+    },
+    {
+      "number": 446,
+      "text": "                        raise"
+    },
+    {
+      "number": 447,
+      "text": "                    await self._rate_limit_backoff(attempt, exc)"
+    },
+    {
+      "number": 448,
+      "text": "                    continue"
+    },
+    {
+      "number": 449,
+      "text": "                if _is_transient_http_error(exc):"
+    },
+    {
+      "number": 450,
+      "text": "                    self._log_gateway_error("
+    },
+    {
+      "number": 451,
+      "text": "                        event=\"transient_http_error\", attempt=attempt + 1, error=exc"
+    },
+    {
+      "number": 452,
+      "text": "                    )"
+    },
+    {
+      "number": 453,
+      "text": "                    if attempt >= self._MAX_TRANSIENT_RETRIES:"
+    },
+    {
+      "number": 454,
+      "text": "                        raise"
+    },
+    {
+      "number": 455,
+      "text": "                    await self._transient_backoff(attempt, exc)"
+    },
+    {
+      "number": 456,
+      "text": "                    continue"
+    },
+    {
+      "number": 457,
+      "text": "                self._log_gateway_error("
+    },
+    {
+      "number": 458,
+      "text": "                    event=\"fatal_gateway_error\", attempt=attempt + 1, error=exc"
+    },
+    {
+      "number": 459,
+      "text": "                )"
+    },
+    {
+      "number": 460,
+      "text": "                raise"
+    },
+    {
+      "number": 461,
+      "text": "        raise RuntimeError(\"Exceeded retry budget without exception or success.\")"
+    },
+    {
+      "number": 462,
+      "text": ""
+    },
+    {
+      "number": 463,
+      "text": "    async def _query_async(self, messages: list[dict[str, Any]]) -> dict[str, Any]:"
+    },
+    {
+      "number": 464,
+      "text": "        last_error: ValueError | None = None"
+    },
+    {
+      "number": 465,
+      "text": "        raw_text = \"\""
+    },
+    {
+      "number": 466,
+      "text": "        request_messages = list(messages)"
+    },
+    {
+      "number": 467,
+      "text": "        for attempt_index in range(MAX_JSON_PARSE_RETRIES + 1):"
+    },
+    {
+      "number": 468,
+      "text": "            payload = self._build_payload(request_messages)"
+    },
+    {
+      "number": 469,
+      "text": "            request_metrics = _request_metrics_from_serialized_input(self._request_metrics_input(payload))"
+    },
+    {
+      "number": 470,
+      "text": "            self._last_request_metrics = dict(request_metrics)"
+    },
+    {
+      "number": 471,
+      "text": "            for key, value in request_metrics.items():"
+    },
+    {
+      "number": 472,
+      "text": "                self._cumulative_request_metrics[key] += value"
+    },
+    {
+      "number": 473,
+      "text": ""
+    },
+    {
+      "number": 474,
+      "text": "            response_payload = await self._post_with_retries(payload)"
+    },
+    {
+      "number": 475,
+      "text": ""
+    },
+    {
+      "number": 476,
+      "text": "            usage_metrics = self._usage_metrics_from_payload(response_payload)"
+    },
+    {
+      "number": 477,
+      "text": "            self._last_usage_metrics = dict(usage_metrics)"
+    },
+    {
+      "number": 478,
+      "text": "            for key, value in usage_metrics.items():"
+    },
+    {
+      "number": 479,
+      "text": "                self._cumulative_usage_metrics[key] += value"
+    },
+    {
+      "number": 480,
+      "text": ""
+    },
+    {
+      "number": 481,
+      "text": "            raw_text = self._extract_text(response_payload)"
+    },
+    {
+      "number": 482,
+      "text": "            append_runtime_log("
+    },
+    {
+      "number": 483,
+      "text": "                self._raw_response_log_path(),"
+    },
+    {
+      "number": 484,
+      "text": "                source=\"model\","
+    },
+    {
+      "number": 485,
+      "text": "                event=\"raw_text\","
+    },
+    {
+      "number": 486,
+      "text": "                attempt=attempt_index + 1,"
+    },
+    {
+      "number": 487,
+      "text": "                raw_text=raw_text,"
+    },
+    {
+      "number": 488,
+      "text": "            )"
+    },
+    {
+      "number": 489,
+      "text": "            try:"
+    },
+    {
+      "number": 490,
+      "text": "                parsed = parse_json_output(raw_text, action_field=self.config.action_field)"
+    },
+    {
+      "number": 491,
+      "text": "                break"
+    },
+    {
+      "number": 492,
+      "text": "            except ValueError as exc:"
+    },
+    {
+      "number": 493,
+      "text": "                last_error = exc"
+    },
+    {
+      "number": 494,
+      "text": "                if attempt_index < MAX_JSON_PARSE_RETRIES:"
+    },
+    {
+      "number": 495,
+      "text": "                    request_messages.append("
+    },
+    {
+      "number": 496,
+      "text": "                        self._format_repair_message(raw_text=raw_text, error=str(exc))"
+    },
+    {
+      "number": 497,
+      "text": "                    )"
+    },
+    {
+      "number": 498,
+      "text": "        else:"
+    },
+    {
+      "number": 499,
+      "text": "            raise self._format_error("
+    },
+    {
+      "number": 500,
+      "text": "                raw_text=raw_text,"
+    },
+    {
+      "number": 501,
+      "text": "                error=str(last_error or ValueError(\"Unable to parse model output.\")),"
+    },
+    {
+      "number": 502,
+      "text": "            )"
+    },
+    {
+      "number": 503,
+      "text": ""
+    },
+    {
+      "number": 504,
+      "text": "        actions: list[dict[str, Any]] = []"
+    },
+    {
+      "number": 505,
+      "text": "        action_field = self.config.action_field"
+    },
+    {
+      "number": 506,
+      "text": "        action_text = str(parsed.get(action_field, \"\") or \"\").strip()"
+    },
+    {
+      "number": 507,
+      "text": "        if action_text:"
+    },
+    {
+      "number": 508,
+      "text": "            action = {action_field: action_text, \"command\": action_text}"
+    },
+    {
+      "number": 509,
+      "text": "            if action_field == \"bash_command\":"
+    },
+    {
+      "number": 510,
+      "text": "                action[\"bash_command\"] = action_text"
+    },
+    {
+      "number": 511,
+      "text": "                try:"
+    },
+    {
+      "number": 512,
+      "text": "                    _validate_bash_command(action_text)"
+    },
+    {
+      "number": 513,
+      "text": "                except ValueError as exc:"
+    },
+    {
+      "number": 514,
+      "text": "                    raise self._format_error(raw_text=raw_text, error=str(exc))"
+    },
+    {
+      "number": 515,
+      "text": "            else:"
+    },
+    {
+      "number": 516,
+      "text": "                action[\"python_code\"] = action_text"
+    },
+    {
+      "number": 517,
+      "text": "            actions.append(action)"
+    },
+    {
+      "number": 518,
+      "text": ""
+    },
+    {
+      "number": 519,
+      "text": "        return self.format_message("
+    },
+    {
+      "number": 520,
+      "text": "            role=\"assistant\","
+    },
+    {
+      "number": 521,
+      "text": "            content=parsed.get(\"thought\", \"\"),"
+    },
+    {
+      "number": 522,
+      "text": "            extra={"
+    },
+    {
+      "number": 523,
+      "text": "                \"actions\": actions,"
+    },
+    {
+      "number": 524,
+      "text": "                \"done\": bool(parsed.get(\"done\", False)),"
+    },
+    {
+      "number": 525,
+      "text": "                \"final_response\": parsed.get(\"final_response\", \"\"),"
+    },
+    {
+      "number": 526,
+      "text": "                \"raw_response\": parsed,"
+    },
+    {
+      "number": 527,
+      "text": "                \"usage\": self._usage_snapshot(),"
+    },
+    {
+      "number": 528,
+      "text": "            },"
+    },
+    {
+      "number": 529,
+      "text": "        )"
+    },
+    {
+      "number": 530,
+      "text": ""
+    },
+    {
+      "number": 531,
+      "text": "    async def _complete_text_async("
+    },
+    {
+      "number": 532,
+      "text": "        self,"
+    },
+    {
+      "number": 533,
+      "text": "        messages: list[dict[str, Any]],"
+    },
+    {
+      "number": 534,
+      "text": "        *,"
+    },
+    {
+      "number": 535,
+      "text": "        max_output_tokens: int | None = None,"
+    },
+    {
+      "number": 536,
+      "text": "    ) -> str:"
+    },
+    {
+      "number": 537,
+      "text": "        original_max_output_tokens = self.config.max_output_tokens"
+    },
+    {
+      "number": 538,
+      "text": "        if max_output_tokens is not None:"
+    },
+    {
+      "number": 539,
+      "text": "            self.config.max_output_tokens = max_output_tokens"
+    },
+    {
+      "number": 540,
+      "text": "        try:"
+    },
+    {
+      "number": 541,
+      "text": "            payload = self._build_text_payload(messages)"
+    },
+    {
+      "number": 542,
+      "text": "            request_metrics = _request_metrics_from_serialized_input(self._request_metrics_input(payload))"
+    },
+    {
+      "number": 543,
+      "text": "            self._last_request_metrics = dict(request_metrics)"
+    },
+    {
+      "number": 544,
+      "text": "            for key, value in request_metrics.items():"
+    },
+    {
+      "number": 545,
+      "text": "                self._cumulative_request_metrics[key] += value"
+    },
+    {
+      "number": 546,
+      "text": ""
+    },
+    {
+      "number": 547,
+      "text": "            response_payload = await self._post_with_retries(payload)"
+    },
+    {
+      "number": 548,
+      "text": ""
+    },
+    {
+      "number": 549,
+      "text": "            usage_metrics = self._usage_metrics_from_payload(response_payload)"
+    },
+    {
+      "number": 550,
+      "text": "            self._last_usage_metrics = dict(usage_metrics)"
+    },
+    {
+      "number": 551,
+      "text": "            for key, value in usage_metrics.items():"
+    },
+    {
+      "number": 552,
+      "text": "                self._cumulative_usage_metrics[key] += value"
+    },
+    {
+      "number": 553,
+      "text": ""
+    },
+    {
+      "number": 554,
+      "text": "            raw_text = self._extract_text(response_payload)"
+    },
+    {
+      "number": 555,
+      "text": "            append_runtime_log("
+    },
+    {
+      "number": 556,
+      "text": "                self._raw_response_log_path(),"
+    },
+    {
+      "number": 557,
+      "text": "                source=\"model\","
+    },
+    {
+      "number": 558,
+      "text": "                event=\"raw_text\","
+    },
+    {
+      "number": 559,
+      "text": "                raw_text=raw_text,"
+    },
+    {
+      "number": 560,
+      "text": "            )"
+    },
+    {
+      "number": 561,
+      "text": "            return raw_text"
+    },
+    {
+      "number": 562,
+      "text": "        finally:"
+    },
+    {
+      "number": 563,
+      "text": "            self.config.max_output_tokens = original_max_output_tokens"
+    },
+    {
+      "number": 564,
+      "text": ""
+    },
+    {
+      "number": 565,
+      "text": "    def __call__("
+    },
+    {
+      "number": 566,
+      "text": "        self,"
+    },
+    {
+      "number": 567,
+      "text": "        messages: list[dict[str, Any]],"
+    },
+    {
+      "number": 568,
+      "text": "        **kwargs: Any,"
+    },
+    {
+      "number": 569,
+      "text": "    ) -> str:"
+    },
+    {
+      "number": 570,
+      "text": "        return run_async(self._complete_text_async(messages, **kwargs))"
+    },
+    {
+      "number": 571,
+      "text": ""
+    },
+    {
+      "number": 572,
+      "text": "    def query(self, messages: list[dict[str, Any]], **kwargs) -> dict[str, Any]:"
+    },
+    {
+      "number": 573,
+      "text": "        return run_async(self._query_async(messages))"
+    },
+    {
+      "number": 574,
+      "text": ""
+    },
+    {
+      "number": 575,
+      "text": "    def serialize(self) -> dict[str, Any]:"
+    },
+    {
+      "number": 576,
+      "text": "        config_dump = self.config.model_dump(mode=\"json\")"
+    },
+    {
+      "number": 577,
+      "text": "        if self._API_KEY_FIELD:"
+    },
+    {
+      "number": 578,
+      "text": "            config_dump[self._API_KEY_FIELD] = \"<redacted>\""
+    },
+    {
+      "number": 579,
+      "text": "        return {"
+    },
+    {
+      "number": 580,
+      "text": "            \"model\": {"
+    },
+    {
+      "number": 581,
+      "text": "                \"config\": config_dump,"
+    },
+    {
+      "number": 582,
+      "text": "                \"usage\": {"
+    },
+    {
+      "number": 583,
+      "text": "                    **self._usage_snapshot(),"
+    },
+    {
+      "number": 584,
+      "text": "                },"
+    },
+    {
+      "number": 585,
+      "text": "                \"model_type\": f\"{self.__class__.__module__}.{self.__class__.__name__}\","
+    },
+    {
+      "number": 586,
+      "text": "            }"
+    },
+    {
+      "number": 587,
+      "text": "        }"
+    }
+  ],
+  "error": null
+}

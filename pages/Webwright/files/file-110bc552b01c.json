@@ -1,0 +1,636 @@
+{
+  "id": "file-110bc552b01c",
+  "path": "src/webwright/models/openai_model.py",
+  "language": "python",
+  "lines": [
+    {
+      "number": 1,
+      "text": "\"\"\"OpenAI Responses API model backend.\"\"\""
+    },
+    {
+      "number": 2,
+      "text": ""
+    },
+    {
+      "number": 3,
+      "text": "from __future__ import annotations"
+    },
+    {
+      "number": 4,
+      "text": ""
+    },
+    {
+      "number": 5,
+      "text": "from pathlib import Path"
+    },
+    {
+      "number": 6,
+      "text": "from typing import Any"
+    },
+    {
+      "number": 7,
+      "text": ""
+    },
+    {
+      "number": 8,
+      "text": "from webwright.models.base import ("
+    },
+    {
+      "number": 9,
+      "text": "    BaseModel,"
+    },
+    {
+      "number": 10,
+      "text": "    BaseModelConfig,"
+    },
+    {
+      "number": 11,
+      "text": "    OptStr,"
+    },
+    {
+      "number": 12,
+      "text": "    _safe_int,"
+    },
+    {
+      "number": 13,
+      "text": "    image_part_from_path,"
+    },
+    {
+      "number": 14,
+      "text": "    text_part,"
+    },
+    {
+      "number": 15,
+      "text": ")"
+    },
+    {
+      "number": 16,
+      "text": ""
+    },
+    {
+      "number": 17,
+      "text": "__all__ = ["
+    },
+    {
+      "number": 18,
+      "text": "    \"OpenAIModel\","
+    },
+    {
+      "number": 19,
+      "text": "    \"OpenAIModelConfig\","
+    },
+    {
+      "number": 20,
+      "text": "    \"_extract_response_text\","
+    },
+    {
+      "number": 21,
+      "text": "    \"text_part\","
+    },
+    {
+      "number": 22,
+      "text": "]"
+    },
+    {
+      "number": 23,
+      "text": ""
+    },
+    {
+      "number": 24,
+      "text": ""
+    },
+    {
+      "number": 25,
+      "text": "def _serialize_response_content_part(part: dict[str, Any], *, role: str) -> dict[str, Any]:"
+    },
+    {
+      "number": 26,
+      "text": "    if part.get(\"type\") == \"input_image\":"
+    },
+    {
+      "number": 27,
+      "text": "        return {"
+    },
+    {
+      "number": 28,
+      "text": "            \"type\": \"input_image\","
+    },
+    {
+      "number": 29,
+      "text": "            \"image_url\": part.get(\"image_url\", \"\"),"
+    },
+    {
+      "number": 30,
+      "text": "            \"detail\": part.get(\"detail\", \"high\"),"
+    },
+    {
+      "number": 31,
+      "text": "        }"
+    },
+    {
+      "number": 32,
+      "text": "    text = part.get(\"text\", \"\")"
+    },
+    {
+      "number": 33,
+      "text": "    if role == \"assistant\":"
+    },
+    {
+      "number": 34,
+      "text": "        return {\"type\": \"output_text\", \"text\": text}"
+    },
+    {
+      "number": 35,
+      "text": "    return {\"type\": \"input_text\", \"text\": text}"
+    },
+    {
+      "number": 36,
+      "text": ""
+    },
+    {
+      "number": 37,
+      "text": ""
+    },
+    {
+      "number": 38,
+      "text": "def _serialize_response_input(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:"
+    },
+    {
+      "number": 39,
+      "text": "    serialized: list[dict[str, Any]] = []"
+    },
+    {
+      "number": 40,
+      "text": "    for message in messages:"
+    },
+    {
+      "number": 41,
+      "text": "        role = message[\"role\"]"
+    },
+    {
+      "number": 42,
+      "text": "        if role == \"exit\":"
+    },
+    {
+      "number": 43,
+      "text": "            continue"
+    },
+    {
+      "number": 44,
+      "text": "        content = message.get(\"content\", \"\")"
+    },
+    {
+      "number": 45,
+      "text": "        if isinstance(content, str):"
+    },
+    {
+      "number": 46,
+      "text": "            serialized_content = [text_part(content)]"
+    },
+    {
+      "number": 47,
+      "text": "        else:"
+    },
+    {
+      "number": 48,
+      "text": "            serialized_content = [part for part in content if isinstance(part, dict)]"
+    },
+    {
+      "number": 49,
+      "text": "        # The Responses API accepts \"developer\" for system-style instructions."
+    },
+    {
+      "number": 50,
+      "text": "        mapped_role = \"developer\" if role == \"system\" else role"
+    },
+    {
+      "number": 51,
+      "text": "        serialized.append("
+    },
+    {
+      "number": 52,
+      "text": "            {"
+    },
+    {
+      "number": 53,
+      "text": "                \"type\": \"message\","
+    },
+    {
+      "number": 54,
+      "text": "                \"role\": mapped_role,"
+    },
+    {
+      "number": 55,
+      "text": "                \"content\": ["
+    },
+    {
+      "number": 56,
+      "text": "                    _serialize_response_content_part(part, role=mapped_role)"
+    },
+    {
+      "number": 57,
+      "text": "                    for part in serialized_content"
+    },
+    {
+      "number": 58,
+      "text": "                ],"
+    },
+    {
+      "number": 59,
+      "text": "            }"
+    },
+    {
+      "number": 60,
+      "text": "        )"
+    },
+    {
+      "number": 61,
+      "text": "    return serialized"
+    },
+    {
+      "number": 62,
+      "text": ""
+    },
+    {
+      "number": 63,
+      "text": ""
+    },
+    {
+      "number": 64,
+      "text": "def _extract_response_text(payload: dict[str, Any]) -> str:"
+    },
+    {
+      "number": 65,
+      "text": "    output_text = payload.get(\"output_text\")"
+    },
+    {
+      "number": 66,
+      "text": "    if isinstance(output_text, str) and output_text:"
+    },
+    {
+      "number": 67,
+      "text": "        return output_text"
+    },
+    {
+      "number": 68,
+      "text": ""
+    },
+    {
+      "number": 69,
+      "text": "    texts: list[str] = []"
+    },
+    {
+      "number": 70,
+      "text": "    for item in payload.get(\"output\") or []:"
+    },
+    {
+      "number": 71,
+      "text": "        if not isinstance(item, dict):"
+    },
+    {
+      "number": 72,
+      "text": "            continue"
+    },
+    {
+      "number": 73,
+      "text": "        if item.get(\"type\") != \"message\":"
+    },
+    {
+      "number": 74,
+      "text": "            continue"
+    },
+    {
+      "number": 75,
+      "text": "        for content in item.get(\"content\") or []:"
+    },
+    {
+      "number": 76,
+      "text": "            if not isinstance(content, dict):"
+    },
+    {
+      "number": 77,
+      "text": "                continue"
+    },
+    {
+      "number": 78,
+      "text": "            if isinstance(content.get(\"text\"), str):"
+    },
+    {
+      "number": 79,
+      "text": "                texts.append(content[\"text\"])"
+    },
+    {
+      "number": 80,
+      "text": "            elif isinstance(content.get(\"output_text\"), str):"
+    },
+    {
+      "number": 81,
+      "text": "                texts.append(content[\"output_text\"])"
+    },
+    {
+      "number": 82,
+      "text": "    return \"\\n\".join(texts)"
+    },
+    {
+      "number": 83,
+      "text": ""
+    },
+    {
+      "number": 84,
+      "text": ""
+    },
+    {
+      "number": 85,
+      "text": "def _usage_metrics_from_response_payload(payload: dict[str, Any]) -> dict[str, int]:"
+    },
+    {
+      "number": 86,
+      "text": "    usage = payload.get(\"usage\")"
+    },
+    {
+      "number": 87,
+      "text": "    if not isinstance(usage, dict):"
+    },
+    {
+      "number": 88,
+      "text": "        usage = {}"
+    },
+    {
+      "number": 89,
+      "text": "    input_details = usage.get(\"input_tokens_details\")"
+    },
+    {
+      "number": 90,
+      "text": "    if not isinstance(input_details, dict):"
+    },
+    {
+      "number": 91,
+      "text": "        input_details = {}"
+    },
+    {
+      "number": 92,
+      "text": "    output_details = usage.get(\"output_tokens_details\")"
+    },
+    {
+      "number": 93,
+      "text": "    if not isinstance(output_details, dict):"
+    },
+    {
+      "number": 94,
+      "text": "        output_details = {}"
+    },
+    {
+      "number": 95,
+      "text": ""
+    },
+    {
+      "number": 96,
+      "text": "    return {"
+    },
+    {
+      "number": 97,
+      "text": "        \"input_tokens\": _safe_int(usage.get(\"input_tokens\")),"
+    },
+    {
+      "number": 98,
+      "text": "        \"output_tokens\": _safe_int(usage.get(\"output_tokens\")),"
+    },
+    {
+      "number": 99,
+      "text": "        \"total_tokens\": _safe_int(usage.get(\"total_tokens\")),"
+    },
+    {
+      "number": 100,
+      "text": "        \"cached_input_tokens\": _safe_int(input_details.get(\"cached_tokens\")),"
+    },
+    {
+      "number": 101,
+      "text": "        \"reasoning_output_tokens\": _safe_int(output_details.get(\"reasoning_tokens\")),"
+    },
+    {
+      "number": 102,
+      "text": "    }"
+    },
+    {
+      "number": 103,
+      "text": ""
+    },
+    {
+      "number": 104,
+      "text": ""
+    },
+    {
+      "number": 105,
+      "text": "class OpenAIModelConfig(BaseModelConfig):"
+    },
+    {
+      "number": 106,
+      "text": "    model_name: OptStr = \"gpt-4o\""
+    },
+    {
+      "number": 107,
+      "text": "    openai_api_key: OptStr = \"\""
+    },
+    {
+      "number": 108,
+      "text": "    openai_endpoint: OptStr = \"https://api.openai.com/v1/responses\""
+    },
+    {
+      "number": 109,
+      "text": ""
+    },
+    {
+      "number": 110,
+      "text": ""
+    },
+    {
+      "number": 111,
+      "text": "class OpenAIModel(BaseModel):"
+    },
+    {
+      "number": 112,
+      "text": "    _API_KEY_FIELD = \"openai_api_key\""
+    },
+    {
+      "number": 113,
+      "text": "    _ENV_VAR = \"OPENAI_API_KEY\""
+    },
+    {
+      "number": 114,
+      "text": "    _LOG_SOURCE = \"openai\""
+    },
+    {
+      "number": 115,
+      "text": "    _MAX_RATE_LIMIT_RETRIES = 5"
+    },
+    {
+      "number": 116,
+      "text": "    _MAX_TRANSIENT_RETRIES = 5"
+    },
+    {
+      "number": 117,
+      "text": "    _DEFAULT_CONFIG_CLASS = OpenAIModelConfig"
+    },
+    {
+      "number": 118,
+      "text": ""
+    },
+    {
+      "number": 119,
+      "text": "    def _request_headers(self) -> dict[str, str]:"
+    },
+    {
+      "number": 120,
+      "text": "        return {"
+    },
+    {
+      "number": 121,
+      "text": "            \"Content-Type\": \"application/json\","
+    },
+    {
+      "number": 122,
+      "text": "            \"Authorization\": f\"Bearer {self.config.openai_api_key}\","
+    },
+    {
+      "number": 123,
+      "text": "        }"
+    },
+    {
+      "number": 124,
+      "text": ""
+    },
+    {
+      "number": 125,
+      "text": "    def _post_url(self) -> str:"
+    },
+    {
+      "number": 126,
+      "text": "        return self.config.openai_endpoint"
+    },
+    {
+      "number": 127,
+      "text": ""
+    },
+    {
+      "number": 128,
+      "text": "    def _build_payload(self, messages: list[dict[str, Any]]) -> dict[str, Any]:"
+    },
+    {
+      "number": 129,
+      "text": "        return {"
+    },
+    {
+      "number": 130,
+      "text": "            \"model\": self.config.model_name,"
+    },
+    {
+      "number": 131,
+      "text": "            \"input\": _serialize_response_input(messages),"
+    },
+    {
+      "number": 132,
+      "text": "            \"max_output_tokens\": self.config.max_output_tokens,"
+    },
+    {
+      "number": 133,
+      "text": "            \"text\": {"
+    },
+    {
+      "number": 134,
+      "text": "                \"format\": {"
+    },
+    {
+      "number": 135,
+      "text": "                    \"type\": \"json_schema\","
+    },
+    {
+      "number": 136,
+      "text": "                    \"name\": \"playwright_step\","
+    },
+    {
+      "number": 137,
+      "text": "                    \"schema\": self._response_schema(),"
+    },
+    {
+      "number": 138,
+      "text": "                    \"strict\": True,"
+    },
+    {
+      "number": 139,
+      "text": "                }"
+    },
+    {
+      "number": 140,
+      "text": "            },"
+    },
+    {
+      "number": 141,
+      "text": "        }"
+    },
+    {
+      "number": 142,
+      "text": ""
+    },
+    {
+      "number": 143,
+      "text": "    def _build_text_payload(self, messages: list[dict[str, Any]]) -> dict[str, Any]:"
+    },
+    {
+      "number": 144,
+      "text": "        return {"
+    },
+    {
+      "number": 145,
+      "text": "            \"model\": self.config.model_name,"
+    },
+    {
+      "number": 146,
+      "text": "            \"input\": _serialize_response_input(messages),"
+    },
+    {
+      "number": 147,
+      "text": "            \"max_output_tokens\": self.config.max_output_tokens,"
+    },
+    {
+      "number": 148,
+      "text": "        }"
+    },
+    {
+      "number": 149,
+      "text": ""
+    },
+    {
+      "number": 150,
+      "text": "    def _request_metrics_input(self, payload: dict[str, Any]) -> list[dict[str, Any]]:"
+    },
+    {
+      "number": 151,
+      "text": "        return payload.get(\"input\") or []"
+    },
+    {
+      "number": 152,
+      "text": ""
+    },
+    {
+      "number": 153,
+      "text": "    def _extract_text(self, payload: dict[str, Any]) -> str:"
+    },
+    {
+      "number": 154,
+      "text": "        return _extract_response_text(payload)"
+    },
+    {
+      "number": 155,
+      "text": ""
+    },
+    {
+      "number": 156,
+      "text": "    def _usage_metrics_from_payload(self, payload: dict[str, Any]) -> dict[str, int]:"
+    },
+    {
+      "number": 157,
+      "text": "        return _usage_metrics_from_response_payload(payload)"
+    }
+  ],
+  "error": null
+}
