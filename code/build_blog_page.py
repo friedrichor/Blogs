@@ -221,6 +221,8 @@ def render_inline(text: str) -> str:
         raw_target = match.group(2)
         path_text, start, end = split_link_target(raw_target)
         target = html.escape(raw_target, quote=True)
+        if raw_target.startswith(("http://", "https://")):
+            return stash(f'<a href="{target}" target="_blank" rel="noopener noreferrer">{label}</a>')
         if is_code_path(path_text):
             data_path = html.escape(path_text, quote=True)
             data_file = build_file_id(path_text)
@@ -254,6 +256,8 @@ def render_markdown(markdown: str) -> tuple[str, str]:
     in_raw = False
     raw_lines: list[str] = []
     table_lines: list[str] = []
+    skipping_source_toc = False
+    source_toc_level = 0
 
     def flush_paragraph() -> None:
         nonlocal paragraph
@@ -293,6 +297,8 @@ def render_markdown(markdown: str) -> tuple[str, str]:
 
     def flush_code() -> None:
         nonlocal code_lines, code_lang
+        if not code_lines and not code_lang:
+            return
         lang_class = f" language-{html.escape(code_lang)}" if code_lang else ""
         code = html.escape("\n".join(code_lines))
         html_blocks.append(f'<pre><code class="{lang_class.strip()}">{code}</code></pre>')
@@ -303,18 +309,46 @@ def render_markdown(markdown: str) -> tuple[str, str]:
         nonlocal quote_lines
         if not quote_lines:
             return
-        paragraphs: list[list[str]] = [[]]
+        rendered_parts: list[str] = []
+        paragraph_parts: list[str] = []
+        quote_list_items: list[str] = []
+        quote_list_type: str | None = None
+
+        def flush_quote_paragraph() -> None:
+            nonlocal paragraph_parts
+            if paragraph_parts:
+                rendered_parts.append(f"<p>{render_inline(' '.join(paragraph_parts))}</p>")
+                paragraph_parts = []
+
+        def flush_quote_list() -> None:
+            nonlocal quote_list_items, quote_list_type
+            if quote_list_items and quote_list_type:
+                rendered_parts.append(
+                    f"<{quote_list_type}>" + "".join(quote_list_items) + f"</{quote_list_type}>"
+                )
+                quote_list_items = []
+                quote_list_type = None
+
         for quote_line in quote_lines:
             if quote_line == "":
-                if paragraphs[-1]:
-                    paragraphs.append([])
+                flush_quote_paragraph()
+                flush_quote_list()
                 continue
-            paragraphs[-1].append(quote_line)
-        rendered = "".join(
-            f"<p>{render_inline(' '.join(parts))}</p>"
-            for parts in paragraphs
-            if parts
-        )
+            ordered = re.match(r"^\d+\.\s+(.+)$", quote_line)
+            unordered = re.match(r"^[-*]\s+(.+)$", quote_line)
+            if ordered or unordered:
+                flush_quote_paragraph()
+                current_type = "ol" if ordered else "ul"
+                if quote_list_type and quote_list_type != current_type:
+                    flush_quote_list()
+                quote_list_type = current_type
+                quote_list_items.append(f"<li>{render_inline((ordered or unordered).group(1))}</li>")
+                continue
+            flush_quote_list()
+            paragraph_parts.append(quote_line)
+        flush_quote_paragraph()
+        flush_quote_list()
+        rendered = "".join(rendered_parts)
         if rendered:
             html_blocks.append(f"<blockquote>{rendered}</blockquote>")
         quote_lines = []
@@ -337,6 +371,26 @@ def render_markdown(markdown: str) -> tuple[str, str]:
 
     for line in lines:
         stripped = line.strip()
+        heading_for_skip = re.match(r"^(#{1,6})\s+(.+)$", stripped)
+        if skipping_source_toc:
+            if heading_for_skip and len(heading_for_skip.group(1)) <= source_toc_level:
+                skipping_source_toc = False
+            else:
+                continue
+        if (
+            heading_for_skip
+            and heading_for_skip.group(2).strip() == "目录"
+            and not in_code
+            and not in_raw
+        ):
+            flush_paragraph()
+            flush_list()
+            flush_code()
+            flush_quote()
+            flush_table()
+            skipping_source_toc = True
+            source_toc_level = len(heading_for_skip.group(1))
+            continue
         if in_code:
             if stripped.startswith("```"):
                 flush_code()

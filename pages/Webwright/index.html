@@ -13,124 +13,12 @@
         <div class="toc-title">目录</div>
         <button type="button" class="toc-toggle" id="toc-toggle" aria-label="折叠目录">‹</button>
       </div>
-      <nav><a class="toc-level-1" href="#webwright-源码精读终端即是-web-agent-的全部">Webwright 源码精读：终端即是 Web Agent 的全部</a><a class="toc-level-2" href="#目录">目录</a><a class="toc-level-2" href="#1-核心设计哲学用代码代替点击">1. 核心设计哲学：用代码代替点击</a><a class="toc-level-3" href="#博客原文">博客原文</a><a class="toc-level-3" href="#代码实现">代码实现</a><a class="toc-level-2" href="#2-三模块架构（约-1000-行代码）">2. 三模块架构（约 1000 行代码）</a><a class="toc-level-3" href="#博客原文">博客原文</a><a class="toc-level-3" href="#代码实现">代码实现</a><a class="toc-level-2" href="#3-agent-交互循环">3. Agent 交互循环</a><a class="toc-level-3" href="#博客原文">博客原文</a><a class="toc-level-3" href="#代码实现">代码实现</a><a class="toc-level-2" href="#4-行动表达bashcommand-与-pythoncode">4. 行动表达：bash_command 与 python_code</a><a class="toc-level-3" href="#博客原文">博客原文</a><a class="toc-level-3" href="#代码实现">代码实现</a><a class="toc-level-2" href="#5-提前完成问题与-self-reflection-门控">5. &quot;提前完成&quot;问题与 Self-Reflection 门控</a><a class="toc-level-3" href="#博客原文">博客原文</a><a class="toc-level-3" href="#代码实现">代码实现</a><a class="toc-level-2" href="#6-上下文爆炸问题与历史压缩">6. 上下文爆炸问题与历史压缩</a><a class="toc-level-3" href="#博客原文">博客原文</a><a class="toc-level-3" href="#代码实现">代码实现</a><a class="toc-level-2" href="#7-完整工作流程（6步）">7. 完整工作流程（6步）</a><a class="toc-level-3" href="#博客原文">博客原文</a><a class="toc-level-3" href="#代码实现">代码实现</a><a class="toc-level-2" href="#8-图像-qa-工具（imageqa）">8. 图像 QA 工具（image_qa）</a><a class="toc-level-3" href="#博客原文">博客原文</a><a class="toc-level-3" href="#代码实现">代码实现</a><a class="toc-level-2" href="#9-可重用-cli-工具输出">9. 可重用 CLI 工具输出</a><a class="toc-level-3" href="#博客原文">博客原文</a><a class="toc-level-3" href="#代码实现">代码实现</a><a class="toc-level-2" href="#10-性能评测与成本数据">10. 性能评测与成本数据</a><a class="toc-level-3" href="#博客原文">博客原文</a><a class="toc-level-3" href="#代码实现">代码实现</a><a class="toc-level-2" href="#11-设计原则少即是多">11. 设计原则：少即是多</a><a class="toc-level-3" href="#博客原文">博客原文</a><a class="toc-level-3" href="#代码实现">代码实现</a><a class="toc-level-2" href="#12-可观测性轨迹与调试文件">12. 可观测性：轨迹与调试文件</a><a class="toc-level-3" href="#博客原文">博客原文</a><a class="toc-level-3" href="#代码实现">代码实现</a><a class="toc-level-2" href="#附录关键配置项速查">附录：关键配置项速查</a><a class="toc-level-2" href="#附录关键文件速查">附录：关键文件速查</a><a class="toc-level-2" href="#acknowledgements">Acknowledgements</a></nav>
+      <nav><a class="toc-level-1" href="#webwright-源码精读终端即是-web-agent-的全部">Webwright 源码精读：终端即是 Web Agent 的全部</a><a class="toc-level-2" href="#1-核心设计哲学用代码代替点击">1. 核心设计哲学：用代码代替点击</a><a class="toc-level-3" href="#博客原文">博客原文</a><a class="toc-level-3" href="#代码实现">代码实现</a><a class="toc-level-2" href="#2-三模块架构（约-1000-行代码）">2. 三模块架构（约 1000 行代码）</a><a class="toc-level-3" href="#博客原文">博客原文</a><a class="toc-level-3" href="#代码实现">代码实现</a><a class="toc-level-2" href="#3-agent-交互循环">3. Agent 交互循环</a><a class="toc-level-3" href="#博客原文">博客原文</a><a class="toc-level-3" href="#代码实现">代码实现</a><a class="toc-level-2" href="#4-行动表达bashcommand-与-pythoncode">4. 行动表达：bash_command 与 python_code</a><a class="toc-level-3" href="#博客原文">博客原文</a><a class="toc-level-3" href="#代码实现">代码实现</a><a class="toc-level-2" href="#5-提前完成问题与-self-reflection-门控">5. &quot;提前完成&quot;问题与 Self-Reflection 门控</a><a class="toc-level-3" href="#博客原文">博客原文</a><a class="toc-level-3" href="#代码实现">代码实现</a><a class="toc-level-2" href="#6-上下文爆炸问题与历史压缩">6. 上下文爆炸问题与历史压缩</a><a class="toc-level-3" href="#博客原文">博客原文</a><a class="toc-level-3" href="#代码实现">代码实现</a><a class="toc-level-2" href="#7-完整工作流程（6步）">7. 完整工作流程（6步）</a><a class="toc-level-3" href="#博客原文">博客原文</a><a class="toc-level-3" href="#代码实现">代码实现</a><a class="toc-level-2" href="#8-图像-qa-工具（imageqa）">8. 图像 QA 工具（image_qa）</a><a class="toc-level-3" href="#博客原文">博客原文</a><a class="toc-level-3" href="#代码实现">代码实现</a><a class="toc-level-2" href="#9-可重用-cli-工具输出">9. 可重用 CLI 工具输出</a><a class="toc-level-3" href="#博客原文">博客原文</a><a class="toc-level-3" href="#代码实现">代码实现</a><a class="toc-level-2" href="#10-性能评测与成本数据">10. 性能评测与成本数据</a><a class="toc-level-3" href="#博客原文">博客原文</a><a class="toc-level-3" href="#代码实现">代码实现</a><a class="toc-level-2" href="#11-设计原则少即是多">11. 设计原则：少即是多</a><a class="toc-level-3" href="#博客原文">博客原文</a><a class="toc-level-3" href="#代码实现">代码实现</a><a class="toc-level-2" href="#12-可观测性轨迹与调试文件">12. 可观测性：轨迹与调试文件</a><a class="toc-level-3" href="#博客原文">博客原文</a><a class="toc-level-3" href="#代码实现">代码实现</a><a class="toc-level-2" href="#附录关键配置项速查">附录：关键配置项速查</a><a class="toc-level-2" href="#附录关键文件速查">附录：关键文件速查</a><a class="toc-level-2" href="#acknowledgements">Acknowledgements</a></nav>
     </aside>
     <button type="button" class="toc-rail" id="toc-rail" aria-label="展开目录">目录</button>
     <main class="document">
       <h1 id="webwright-源码精读终端即是-web-agent-的全部">Webwright 源码精读：终端即是 Web Agent 的全部</h1>
-<blockquote><p><strong>Official Blog</strong>: <a href="https://www.microsoft.com/en-us/research/articles/webwright-a-terminal-is-all-you-need-for-web-agents/">Webwright: A Terminal is All You Need for Web Agents</a> (Microsoft Research)</p><p><strong>Disclaimer</strong>: This note was primarily generated by Claude (Anthropic). For learning and reference only — corrections are welcome.</p><p>本笔记将博客中每个关键概念、设计决策和技术方案，精确映射到源代码中的具体实现位置，供有意深入阅读源码的读者参考。</p></blockquote>
-<hr>
-<h2 id="目录">目录</h2>
-<ul>
-<li><a href="#webwright-源码精读终端即是-web-agent-的全部">Webwright 源码精读：终端即是 Web Agent 的全部</a>
-<ul>
-<li><a href="#目录">目录</a>
-</li>
-<li><a href="#1-核心设计哲学用代码代替点击">1. 核心设计哲学：用代码代替点击</a>
-<ul>
-<li><a href="#博客原文">博客原文</a>
-</li>
-<li><a href="#代码实现">代码实现</a>
-</li>
-</ul>
-</li>
-<li><a href="#2-三模块架构约-1000-行代码">2. 三模块架构（约 1000 行代码）</a>
-<ul>
-<li><a href="#博客原文-1">博客原文</a>
-</li>
-<li><a href="#代码实现-1">代码实现</a>
-</li>
-</ul>
-</li>
-<li><a href="#3-agent-交互循环">3. Agent 交互循环</a>
-<ul>
-<li><a href="#博客原文-2">博客原文</a>
-</li>
-<li><a href="#代码实现-2">代码实现</a>
-</li>
-</ul>
-</li>
-<li><a href="#4-行动表达bash_command-与-python_code">4. 行动表达：bash\_command 与 python\_code</a>
-<ul>
-<li><a href="#博客原文-3">博客原文</a>
-</li>
-<li><a href="#代码实现-3">代码实现</a>
-</li>
-</ul>
-</li>
-<li><a href="#5-提前完成问题与-self-reflection-门控">5. &quot;提前完成&quot;问题与 Self-Reflection 门控</a>
-<ul>
-<li><a href="#博客原文-4">博客原文</a>
-</li>
-<li><a href="#代码实现-4">代码实现</a>
-</li>
-</ul>
-</li>
-<li><a href="#6-上下文爆炸问题与历史压缩">6. 上下文爆炸问题与历史压缩</a>
-<ul>
-<li><a href="#博客原文-5">博客原文</a>
-</li>
-<li><a href="#代码实现-5">代码实现</a>
-</li>
-</ul>
-</li>
-<li><a href="#7-完整工作流程6步">7. 完整工作流程（6步）</a>
-<ul>
-<li><a href="#博客原文-6">博客原文</a>
-</li>
-<li><a href="#代码实现-6">代码实现</a>
-</li>
-</ul>
-</li>
-<li><a href="#8-图像-qa-工具image_qa">8. 图像 QA 工具（image\_qa）</a>
-<ul>
-<li><a href="#博客原文-7">博客原文</a>
-</li>
-<li><a href="#代码实现-7">代码实现</a>
-</li>
-</ul>
-</li>
-<li><a href="#9-可重用-cli-工具输出">9. 可重用 CLI 工具输出</a>
-<ul>
-<li><a href="#博客原文-8">博客原文</a>
-</li>
-<li><a href="#代码实现-8">代码实现</a>
-</li>
-</ul>
-</li>
-<li><a href="#10-性能评测与成本数据">10. 性能评测与成本数据</a>
-<ul>
-<li><a href="#博客原文-9">博客原文</a>
-</li>
-<li><a href="#代码实现-9">代码实现</a>
-</li>
-</ul>
-</li>
-<li><a href="#11-设计原则少即是多">11. 设计原则：少即是多</a>
-<ul>
-<li><a href="#博客原文-10">博客原文</a>
-</li>
-<li><a href="#代码实现-10">代码实现</a>
-</li>
-</ul>
-</li>
-<li><a href="#12-可观测性轨迹与调试文件">12. 可观测性：轨迹与调试文件</a>
-<ul>
-<li><a href="#博客原文-11">博客原文</a>
-</li>
-<li><a href="#代码实现-11">代码实现</a>
-</li>
-</ul>
-</li>
-<li><a href="#附录关键配置项速查">附录：关键配置项速查</a>
-</li>
-<li><a href="#附录关键文件速查">附录：关键文件速查</a>
-</li>
-<li><a href="#acknowledgements">Acknowledgements</a>
-</li>
-</ul>
-</li>
-</ul>
+<blockquote><p><strong>Official Blog</strong>: <a href="https://www.microsoft.com/en-us/research/articles/webwright-a-terminal-is-all-you-need-for-web-agents/" target="_blank" rel="noopener noreferrer">Webwright: A Terminal is All You Need for Web Agents</a> (Microsoft Research)</p><p><strong>Disclaimer</strong>: This note was primarily generated by Claude (Anthropic). For learning and reference only — corrections are welcome.</p><p>本笔记将博客中每个关键概念、设计决策和技术方案，精确映射到源代码中的具体实现位置，供有意深入阅读源码的读者参考。</p></blockquote>
 <hr>
 <h2 id="1-核心设计哲学用代码代替点击">1. 核心设计哲学：用代码代替点击</h2>
 <h3 id="博客原文">博客原文</h3>
@@ -147,7 +35,7 @@
 <hr>
 <h2 id="2-三模块架构（约-1000-行代码）">2. 三模块架构（约 1000 行代码）</h2>
 <h3 id="博客原文">博客原文</h3>
-<blockquote><p>三个核心模块，总计约 1000 行代码： - 运行器（Runner）：约 150 行 - 模型接口（Model Interface）：约 550 行 - 环境（Environment）：约 300 行</p></blockquote>
+<blockquote><p>三个核心模块，总计约 1000 行代码：</p><ul><li>运行器（Runner）：约 150 行</li><li>模型接口（Model Interface）：约 550 行</li><li>环境（Environment）：约 300 行</li></ul></blockquote>
 <h3 id="代码实现">代码实现</h3>
 <table><thead><tr><th>模块</th><th>博客描述</th><th>实际文件</th><th>行数</th></tr></thead><tbody><tr><td><strong>Runner（运行器）</strong></td><td>~150 行，编排 Agent 循环</td><td><a href="src/webwright/run/cli.py" class="code-ref-trigger" data-code-path="src/webwright/run/cli.py" data-file-id="file-d934a7c98367" data-start="" data-end="">src/webwright/run/cli.py</a></td><td>155 行</td></tr><tr><td><strong>Model Interface（模型接口）</strong></td><td>~550 行，处理 LLM 通信</td><td><a href="src/webwright/models/base.py" class="code-ref-trigger" data-code-path="src/webwright/models/base.py" data-file-id="file-b5b69364e30b" data-start="" data-end="">src/webwright/models/base.py</a></td><td>588 行</td></tr><tr><td><strong>Environment（环境）</strong></td><td>~300 行，管理工作区和执行命令</td><td><a href="src/webwright/environments/local_workspace.py" class="code-ref-trigger" data-code-path="src/webwright/environments/local_workspace.py" data-file-id="file-b6d638ec2795" data-start="" data-end="">src/webwright/environments/local_workspace.py</a></td><td>~300 行</td></tr></tbody></table>
 <p><strong>Runner</strong> 的核心入口函数：</p>
@@ -161,7 +49,7 @@
 <hr>
 <h2 id="3-agent-交互循环">3. Agent 交互循环</h2>
 <h3 id="博客原文">博客原文</h3>
-<blockquote><p>1. 运行器将当前上下文发送给模型 2. 模型返回解析后的动作：思考块 + Shell 命令块 3. 环境在本地工作区执行命令 4. 返回观测结果（终端输出、日志、截图、错误信息） 5. 循环持续直到任务完成</p></blockquote>
+<blockquote><ol><li>运行器将当前上下文发送给模型</li><li>模型返回解析后的动作：思考块 + Shell 命令块</li><li>环境在本地工作区执行命令</li><li>返回观测结果（终端输出、日志、截图、错误信息）</li><li>循环持续直到任务完成</li></ol></blockquote>
 <h3 id="代码实现">代码实现</h3>
 <p><strong>主循环</strong>位于 Agent 的 <code>run()</code> 方法：</p>
 <p><a href="src/webwright/agents/default.py#L341-L381" class="code-ref-trigger" data-code-path="src/webwright/agents/default.py" data-file-id="file-e313798ded40" data-start="341" data-end="381">src/webwright/agents/default.py:341-381</a>（<code>run</code> 方法）</p>
@@ -327,7 +215,7 @@
 <hr>
 <h2 id="10-性能评测与成本数据">10. 性能评测与成本数据</h2>
 <h3 id="博客原文">博客原文</h3>
-<blockquote><p><strong>Online-Mind2Web</strong>（300 个任务，136 个网站）： - GPT-5.4：准确率 86.67%（AutoEval 类别的最优水平） - Claude Opus 4.7：准确率 84.7% - 困难任务上 Claude 表现更好（80.5% vs 76.6%）</p><p><strong>Odysseys</strong>（200 个多步骤任务）： - Webwright + GPT-5.4：60.1%（比此前最优水平提升 35.1 个百分点） - 基础 GPT-5.4（无 Webwright）：33.5%（相对提升 79.4%）</p><p><strong>成本</strong>：GPT-5.4 平均每任务花费 2.37 美元，平均 26.3 步。前 50 步达到 82% 准确率；后 50 步额外增加 3-4 个百分点。</p></blockquote>
+<blockquote><p><strong>Online-Mind2Web</strong>（300 个任务，136 个网站）：</p><ul><li>GPT-5.4：准确率 86.67%（AutoEval 类别的最优水平）</li><li>Claude Opus 4.7：准确率 84.7%</li><li>困难任务上 Claude 表现更好（80.5% vs 76.6%）</li></ul><p><strong>Odysseys</strong>（200 个多步骤任务）：</p><ul><li>Webwright + GPT-5.4：60.1%（比此前最优水平提升 35.1 个百分点）</li><li>基础 GPT-5.4（无 Webwright）：33.5%（相对提升 79.4%）</li></ul><p><strong>成本</strong>：GPT-5.4 平均每任务花费 2.37 美元，平均 26.3 步。前 50 步达到 82% 准确率；后 50 步额外增加 3-4 个百分点。</p></blockquote>
 <h3 id="代码实现">代码实现</h3>
 <p><strong>模型选择</strong>（Claude Opus 4.7 或 GPT-5.4）通过 model modifier yaml 配置：</p>
 <p><a href="src/webwright/config/model_claude.yaml" class="code-ref-trigger" data-code-path="src/webwright/config/model_claude.yaml" data-file-id="file-25ce928315be" data-start="" data-end="">src/webwright/config/model_claude.yaml</a>（设置 <code>claude-opus-4-7</code>）</p>
@@ -396,15 +284,14 @@
 <h2 id="acknowledgements">Acknowledgements</h2>
 <p>This note is based on the open-source project <strong>Webwright</strong> by Microsoft Research.</p>
 <ul>
-<li><strong>Repository</strong>: <a href="https://github.com/microsoft/Webwright">microsoft/Webwright</a>
+<li><strong>Repository</strong>: <a href="https://github.com/microsoft/Webwright" target="_blank" rel="noopener noreferrer">microsoft/Webwright</a>
 </li>
-<li><strong>Blog Post</strong>: <a href="https://www.microsoft.com/en-us/research/articles/webwright-a-terminal-is-all-you-need-for-web-agents/">Webwright: A Terminal is All You Need for Web Agents</a> — Microsoft Research
+<li><strong>Blog Post</strong>: <a href="https://www.microsoft.com/en-us/research/articles/webwright-a-terminal-is-all-you-need-for-web-agents/" target="_blank" rel="noopener noreferrer">Webwright: A Terminal is All You Need for Web Agents</a> — Microsoft Research
 </li>
-<li><strong>License</strong>: Please refer to the <a href="https://github.com/microsoft/Webwright/blob/main/LICENSE">repository license</a> for terms of use.
+<li><strong>License</strong>: Please refer to the <a href="https://github.com/microsoft/Webwright/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">repository license</a> for terms of use.
 </li>
 </ul>
 <p>All source code references in this note point to the Webwright repository. Credit for the system design and implementation belongs to the original authors at Microsoft Research.</p>
-<pre><code class=""></code></pre>
     </main>
     <div class="code-resizer" id="code-resizer" aria-hidden="true"></div>
     <aside class="code-viewer" id="code-viewer" aria-hidden="true">
